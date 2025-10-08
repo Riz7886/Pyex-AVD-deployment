@@ -1,5 +1,5 @@
 # Complete Setup Guide - Azure Virtual Desktop
-## PYEX Health Company VDI Deployment
+##  Health Company VDI Deployment
 
 ---
 
