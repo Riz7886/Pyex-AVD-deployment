@@ -1,5 +1,5 @@
 # Azure Virtual Desktop Enterprise Architecture
-## PYEX Health Company - Healthcare VDI Solution
+## Health Company - Healthcare VDI Solution
 
 ---
 
