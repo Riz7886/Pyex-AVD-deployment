@@ -1,0 +1,847 @@
+﻿<#
+.SYNOPSIS
+    Safe Azure Environment Remediation Script with Built-in Safeguards
+
+.DESCRIPTION
+    Fixes identified security issues with safety checks, rollback capability, and approval gates.
+    NEVER runs in production without explicit approval and backup.
+
+.PARAMETER Environment
+    Target environment: DEV, TEST, or PROD
+
+.PARAMETER FixCategories
+    Categories to fix: StaleRBAC, StorageSecurity, KeyVaultSecurity, NSGDeny, NetworkRestriction
+
+.PARAMETER BackupPath
+    Path to store configuration backups
+
+.PARAMETER DryRun
+    If specified, only shows what would be changed without making changes
+
+.PARAMETER SkipApproval
+    Skip approval prompts (USE WITH EXTREME CAUTION)
+
+.EXAMPLE
+    # Dry run first (ALWAYS DO THIS FIRST)
+    .\Safe-Remediation.ps1 -DryRun -FixCategories StaleRBAC
+
+.EXAMPLE
+    # Fix low-risk items in DEV
+    .\Safe-Remediation.ps1 -Environment DEV -FixCategories StaleRBAC,StorageSecurity
+
+.EXAMPLE
+    # Fix in PROD with full safety checks
+    .\Safe-Remediation.ps1 -Environment PROD -FixCategories StaleRBAC -BackupPath "C:\Backups"
+
+.NOTES
+    Author: Cloud Security Team
+    Version: 1.0
+    ALWAYS test in non-production first!
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("DEV", "TEST", "PROD")]
+    [string]$Environment,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("StaleRBAC", "StorageSecurity", "KeyVaultSecurity", "NSGDeny", "NetworkRestriction", "All")]
+    [string[]]$FixCategories,
+
+    [Parameter(Mandatory = $false)]
+    [string]$BackupPath = ".\Azure-Remediation-Backups",
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DryRun,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$SkipApproval
+)
+
+#region Safety Functions
+
+function Write-SafeLog {
+    param(
+        [string]$Message,
+        [ValidateSet("INFO", "WARNING", "ERROR", "SUCCESS", "DRYRUN")]
+        [string]$Level = "INFO"
+    )
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $colors = @{
+        "INFO"    = "Cyan"
+        "WARNING" = "Yellow"
+        "ERROR"   = "Red"
+        "SUCCESS" = "Green"
+        "DRYRUN"  = "Magenta"
+    }
+    
+    $logMessage = "[$timestamp] [$Level] $Message"
+    Write-Host $logMessage -ForegroundColor $colors[$Level]
+    
+    # Also log to file
+    $logFile = Join-Path $BackupPath "remediation-$(Get-Date -Format 'yyyyMMdd').log"
+    $logMessage | Out-File -FilePath $logFile -Append
+}
+
+function Test-Prerequisites {
+    Write-SafeLog "Checking prerequisites..." "INFO"
+    
+    # Check Azure CLI
+    try {
+        $version = az version --output json 2>&1 | ConvertFrom-Json
+        Write-SafeLog "Azure CLI version: $($version.'azure-cli')" "SUCCESS"
+    }
+    catch {
+        Write-SafeLog "Azure CLI not found. Install from https://aka.ms/installazurecli" "ERROR"
+        return $false
+    }
+    
+    # Check login
+    try {
+        $account = az account show 2>&1 | ConvertFrom-Json
+        Write-SafeLog "Logged in as: $($account.user.name)" "SUCCESS"
+        Write-SafeLog "Subscription: $($account.name)" "SUCCESS"
+    }
+    catch {
+        Write-SafeLog "Not logged in to Azure. Run: az login" "ERROR"
+        return $false
+    }
+    
+    # Check permissions
+    $requiredRoles = @("Owner", "User Access Administrator", "Contributor")
+    $userRoles = az role assignment list --assignee $account.user.name --query "[].roleDefinitionName" -o json | ConvertFrom-Json
+    
+    $hasPermission = $false
+    foreach ($role in $requiredRoles) {
+        if ($userRoles -contains $role) {
+            $hasPermission = $true
+            Write-SafeLog "User has required role: $role" "SUCCESS"
+            break
+        }
+    }
+    
+    if (-not $hasPermission) {
+        Write-SafeLog "Insufficient permissions. Need: $($requiredRoles -join ', ')" "ERROR"
+        return $false
+    }
+    
+    return $true
+}
+
+function New-BackupConfiguration {
+    param([string]$Type)
+    
+    Write-SafeLog "Creating backup of $Type configuration..." "INFO"
+    
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $backupFile = Join-Path $BackupPath "$Type-backup-$timestamp.json"
+    
+    switch ($Type) {
+        "RBAC" {
+            az role assignment list --all --output json > $backupFile
+        }
+        "NSG" {
+            az network nsg list --output json > $backupFile
+        }
+        "Storage" {
+            az storage account list --output json > $backupFile
+        }
+        "KeyVault" {
+            az keyvault list --output json > $backupFile
+        }
+    }
+    
+    if (Test-Path $backupFile) {
+        Write-SafeLog "Backup saved: $backupFile" "SUCCESS"
+        return $backupFile
+    }
+    else {
+        Write-SafeLog "Backup failed for $Type" "ERROR"
+        return $null
+    }
+}
+
+function Get-Approval {
+    param(
+        [string]$Action,
+        [string]$Impact,
+        [string]$RollbackPlan
+    )
+    
+    if ($SkipApproval) {
+        Write-SafeLog "Approval skipped (SkipApproval flag set)" "WARNING"
+        return $true
+    }
+    
+    Write-Host "`n============================================================" -ForegroundColor Yellow
+    Write-Host "APPROVAL REQUIRED" -ForegroundColor Yellow
+    Write-Host "============================================================" -ForegroundColor Yellow
+    Write-Host "Action: $Action" -ForegroundColor White
+    Write-Host "Impact: $Impact" -ForegroundColor White
+    Write-Host "Rollback: $RollbackPlan" -ForegroundColor White
+    Write-Host "Environment: $Environment" -ForegroundColor $(if($Environment -eq "PROD"){"Red"}else{"Green"})
+    Write-Host "============================================================`n" -ForegroundColor Yellow
+    
+    if ($Environment -eq "PROD") {
+        Write-Host "WARNING: This will modify PRODUCTION environment!" -ForegroundColor Red
+        Write-Host "Ensure you have:" -ForegroundColor Red
+        Write-Host "  1. Tested in non-prod" -ForegroundColor Red
+        Write-Host "  2. Notified stakeholders" -ForegroundColor Red
+        Write-Host "  3. Scheduled maintenance window" -ForegroundColor Red
+        Write-Host "  4. Prepared rollback plan`n" -ForegroundColor Red
+    }
+    
+    $response = Read-Host "Do you want to proceed? Type 'YES' to continue"
+    return ($response -eq "YES")
+}
+
+function Invoke-SafeChange {
+    param(
+        [string]$Description,
+        [scriptblock]$ChangeScript,
+        [scriptblock]$RollbackScript,
+        [string]$Impact = "Low"
+    )
+    
+    if ($DryRun) {
+        Write-SafeLog "[DRY RUN] Would execute: $Description" "DRYRUN"
+        return @{ Success = $true; DryRun = $true }
+    }
+    
+    Write-SafeLog "Executing: $Description" "INFO"
+    
+    try {
+        $result = & $ChangeScript
+        Write-SafeLog "Successfully completed: $Description" "SUCCESS"
+        return @{ Success = $true; Result = $result; RollbackScript = $RollbackScript }
+    }
+    catch {
+        Write-SafeLog "Failed: $Description - Error: $_" "ERROR"
+        
+        if ($RollbackScript) {
+            Write-SafeLog "Attempting rollback..." "WARNING"
+            try {
+                & $RollbackScript
+                Write-SafeLog "Rollback successful" "SUCCESS"
+            }
+            catch {
+                Write-SafeLog "Rollback failed: $_" "ERROR"
+            }
+        }
+        
+        return @{ Success = $false; Error = $_ }
+    }
+}
+
+#endregion
+
+#region Remediation Functions
+
+function Fix-StaleRBACAssignments {
+    Write-Host "`n============================================================" -ForegroundColor Cyan
+    Write-Host "FIXING: Stale RBAC Assignments" -ForegroundColor Cyan
+    Write-Host "============================================================`n" -ForegroundColor Cyan
+    
+    # Create backup
+    $backup = New-BackupConfiguration -Type "RBAC"
+    if (-not $backup) {
+        Write-SafeLog "Cannot proceed without backup" "ERROR"
+        return
+    }
+    
+    # Get all assignments
+    Write-SafeLog "Scanning for stale RBAC assignments..." "INFO"
+    $allAssignments = az role assignment list --all --output json | ConvertFrom-Json
+    
+    $staleAssignments = @()
+    foreach ($assignment in $allAssignments) {
+        if ([string]::IsNullOrEmpty($assignment.principalName) -or $assignment.principalName -eq "Unknown") {
+            # Verify it's truly deleted
+            $exists = $false
+            try {
+                az ad user show --id $assignment.principalId 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { $exists = $true }
+            }
+            catch { }
+            
+            if (-not $exists) {
+                try {
+                    az ad group show --id $assignment.principalId 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $exists = $true }
+                }
+                catch { }
+            }
+            
+            if (-not $exists) {
+                try {
+                    az ad sp show --id $assignment.principalId 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $exists = $true }
+                }
+                catch { }
+            }
+            
+            if (-not $exists) {
+                $staleAssignments += $assignment
+            }
+        }
+    }
+    
+    Write-SafeLog "Found $($staleAssignments.Count) stale assignments" "INFO"
+    
+    if ($staleAssignments.Count -eq 0) {
+        Write-SafeLog "No stale assignments found" "SUCCESS"
+        return
+    }
+    
+    # Get approval
+    $approved = Get-Approval `
+        -Action "Remove $($staleAssignments.Count) stale RBAC assignments" `
+        -Impact "Low - These identities are already deleted" `
+        -RollbackPlan "Restore from backup: $backup"
+    
+    if (-not $approved) {
+        Write-SafeLog "User cancelled operation" "WARNING"
+        return
+    }
+    
+    # Remove stale assignments
+    $successCount = 0
+    $failCount = 0
+    
+    foreach ($assignment in $staleAssignments) {
+        $result = Invoke-SafeChange `
+            -Description "Remove stale assignment: $($assignment.principalId) - $($assignment.roleDefinitionName)" `
+            -ChangeScript {
+                az role assignment delete `
+                    --assignee $assignment.principalId `
+                    --scope $assignment.scope `
+                    --output none
+            } `
+            -RollbackScript {
+                az role assignment create `
+                    --assignee $assignment.principalId `
+                    --role $assignment.roleDefinitionName `
+                    --scope $assignment.scope `
+                    --output none
+            } `
+            -Impact "Low"
+        
+        if ($result.Success) { $successCount++ }
+        else { $failCount++ }
+    }
+    
+    Write-SafeLog "Stale RBAC cleanup complete: $successCount succeeded, $failCount failed" "SUCCESS"
+}
+
+function Fix-StorageSecurity {
+    Write-Host "`n============================================================" -ForegroundColor Cyan
+    Write-Host "FIXING: Storage Account Security" -ForegroundColor Cyan
+    Write-Host "============================================================`n" -ForegroundColor Cyan
+    
+    # Create backup
+    $backup = New-BackupConfiguration -Type "Storage"
+    if (-not $backup) {
+        Write-SafeLog "Cannot proceed without backup" "ERROR"
+        return
+    }
+    
+    # Get all storage accounts
+    Write-SafeLog "Scanning storage accounts..." "INFO"
+    $storageAccounts = az storage account list --output json | ConvertFrom-Json
+    
+    $issuesFound = @()
+    
+    foreach ($sa in $storageAccounts) {
+        $issues = @()
+        
+        # Check HTTPS only
+        if ($sa.enableHttpsTrafficOnly -ne $true) {
+            $issues += "HTTPS not enforced"
+        }
+        
+        # Check TLS version
+        if ($sa.minimumTlsVersion -ne "TLS1_2") {
+            $issues += "TLS 1.2 not enforced"
+        }
+        
+        # Check public blob access
+        if ($sa.allowBlobPublicAccess -eq $true) {
+            $issues += "Public blob access enabled"
+        }
+        
+        if ($issues.Count -gt 0) {
+            $issuesFound += [PSCustomObject]@{
+                Name = $sa.name
+                ResourceGroup = $sa.resourceGroup
+                Issues = $issues
+            }
+        }
+    }
+    
+    Write-SafeLog "Found $($issuesFound.Count) storage accounts with security issues" "INFO"
+    
+    if ($issuesFound.Count -eq 0) {
+        Write-SafeLog "No storage security issues found" "SUCCESS"
+        return
+    }
+    
+    # Display issues
+    foreach ($sa in $issuesFound) {
+        Write-Host "`nStorage Account: $($sa.Name)" -ForegroundColor Yellow
+        foreach ($issue in $sa.Issues) {
+            Write-Host "  - $issue" -ForegroundColor White
+        }
+    }
+    
+    # Get approval
+    $approved = Get-Approval `
+        -Action "Fix security settings on $($issuesFound.Count) storage accounts" `
+        -Impact "LOW - Modern clients support HTTPS and TLS 1.2. Public access restrictions may affect external users." `
+        -RollbackPlan "Restore from backup: $backup (manual process required)"
+    
+    if (-not $approved) {
+        Write-SafeLog "User cancelled operation" "WARNING"
+        return
+    }
+    
+    # Fix each storage account
+    $successCount = 0
+    $failCount = 0
+    
+    foreach ($sa in $issuesFound) {
+        Write-SafeLog "Fixing: $($sa.Name)" "INFO"
+        
+        # Enable HTTPS only
+        if ($sa.Issues -contains "HTTPS not enforced") {
+            $result = Invoke-SafeChange `
+                -Description "Enable HTTPS-only on $($sa.Name)" `
+                -ChangeScript {
+                    az storage account update `
+                        --name $sa.Name `
+                        --resource-group $sa.ResourceGroup `
+                        --https-only true `
+                        --output none
+                } `
+                -Impact "Low"
+            
+            if ($result.Success) { $successCount++ } else { $failCount++ }
+        }
+        
+        # Enforce TLS 1.2
+        if ($sa.Issues -contains "TLS 1.2 not enforced") {
+            $result = Invoke-SafeChange `
+                -Description "Enforce TLS 1.2 on $($sa.Name)" `
+                -ChangeScript {
+                    az storage account update `
+                        --name $sa.Name `
+                        --resource-group $sa.ResourceGroup `
+                        --min-tls-version TLS1_2 `
+                        --output none
+                } `
+                -Impact "Low"
+            
+            if ($result.Success) { $successCount++ } else { $failCount++ }
+        }
+        
+        # Disable public blob access (with extra caution)
+        if ($sa.Issues -contains "Public blob access enabled") {
+            Write-Host "`nWARNING: About to disable public blob access on $($sa.Name)" -ForegroundColor Red
+            Write-Host "This may break applications that rely on anonymous blob access!" -ForegroundColor Red
+            $confirm = Read-Host "Type the storage account name to confirm"
+            
+            if ($confirm -eq $sa.Name) {
+                $result = Invoke-SafeChange `
+                    -Description "Disable public blob access on $($sa.Name)" `
+                    -ChangeScript {
+                        az storage account update `
+                            --name $sa.Name `
+                            --resource-group $sa.ResourceGroup `
+                            --allow-blob-public-access false `
+                            --output none
+                    } `
+                    -RollbackScript {
+                        az storage account update `
+                            --name $sa.Name `
+                            --resource-group $sa.ResourceGroup `
+                            --allow-blob-public-access true `
+                            --output none
+                    } `
+                    -Impact "High"
+                
+                if ($result.Success) { $successCount++ } else { $failCount++ }
+            }
+            else {
+                Write-SafeLog "Skipped disabling public access on $($sa.Name)" "WARNING"
+            }
+        }
+    }
+    
+    Write-SafeLog "Storage security fixes complete: $successCount succeeded, $failCount failed" "SUCCESS"
+}
+
+function Fix-KeyVaultSecurity {
+    Write-Host "`n============================================================" -ForegroundColor Cyan
+    Write-Host "FIXING: Key Vault Security" -ForegroundColor Cyan
+    Write-Host "============================================================`n" -ForegroundColor Cyan
+    
+    # Create backup
+    $backup = New-BackupConfiguration -Type "KeyVault"
+    if (-not $backup) {
+        Write-SafeLog "Cannot proceed without backup" "ERROR"
+        return
+    }
+    
+    # Get all key vaults
+    Write-SafeLog "Scanning Key Vaults..." "INFO"
+    $keyVaults = az keyvault list --output json | ConvertFrom-Json
+    
+    $issuesFound = @()
+    
+    foreach ($kv in $keyVaults) {
+        $kvDetails = az keyvault show --name $kv.name --output json | ConvertFrom-Json
+        $issues = @()
+        
+        # Check soft delete
+        if ($kvDetails.properties.enableSoftDelete -ne $true) {
+            $issues += "Soft delete not enabled"
+        }
+        
+        # Check purge protection
+        if ($kvDetails.properties.enablePurgeProtection -ne $true) {
+            $issues += "Purge protection not enabled"
+        }
+        
+        if ($issues.Count -gt 0) {
+            $issuesFound += [PSCustomObject]@{
+                Name = $kv.name
+                Issues = $issues
+            }
+        }
+    }
+    
+    Write-SafeLog "Found $($issuesFound.Count) Key Vaults with security issues" "INFO"
+    
+    if ($issuesFound.Count -eq 0) {
+        Write-SafeLog "No Key Vault security issues found" "SUCCESS"
+        return
+    }
+    
+    # Display issues
+    foreach ($kv in $issuesFound) {
+        Write-Host "`nKey Vault: $($kv.Name)" -ForegroundColor Yellow
+        foreach ($issue in $kv.Issues) {
+            Write-Host "  - $issue" -ForegroundColor White
+        }
+    }
+    
+    # Important warning about purge protection
+    Write-Host "`n" -ForegroundColor Red
+    Write-Host "IMPORTANT: Purge protection CANNOT be disabled once enabled!" -ForegroundColor Red
+    Write-Host "This is a permanent change that prevents force deletion for 90 days." -ForegroundColor Red
+    Write-Host "`n" -ForegroundColor Red
+    
+    # Get approval
+    $approved = Get-Approval `
+        -Action "Enable soft delete and purge protection on $($issuesFound.Count) Key Vaults" `
+        -Impact "MEDIUM - Purge protection is PERMANENT and cannot be undone" `
+        -RollbackPlan "CANNOT rollback purge protection. Soft delete can be managed."
+    
+    if (-not $approved) {
+        Write-SafeLog "User cancelled operation" "WARNING"
+        return
+    }
+    
+    # Fix each Key Vault
+    $successCount = 0
+    $failCount = 0
+    
+    foreach ($kv in $issuesFound) {
+        Write-SafeLog "Fixing: $($kv.Name)" "INFO"
+        
+        # Enable soft delete
+        if ($kv.Issues -contains "Soft delete not enabled") {
+            $result = Invoke-SafeChange `
+                -Description "Enable soft delete on $($kv.Name)" `
+                -ChangeScript {
+                    az keyvault update `
+                        --name $kv.Name `
+                        --enable-soft-delete true `
+                        --retention-days 90 `
+                        --output none
+                } `
+                -Impact "Low"
+            
+            if ($result.Success) { $successCount++ } else { $failCount++ }
+        }
+        
+        # Enable purge protection (with extra confirmation)
+        if ($kv.Issues -contains "Purge protection not enabled") {
+            Write-Host "`nWARNING: About to enable purge protection on $($kv.Name)" -ForegroundColor Red
+            Write-Host "This is PERMANENT and CANNOT be undone!" -ForegroundColor Red
+            $confirm = Read-Host "Type 'ENABLE PURGE PROTECTION' to confirm"
+            
+            if ($confirm -eq "ENABLE PURGE PROTECTION") {
+                $result = Invoke-SafeChange `
+                    -Description "Enable purge protection on $($kv.Name)" `
+                    -ChangeScript {
+                        az keyvault update `
+                            --name $kv.Name `
+                            --enable-purge-protection true `
+                            --output none
+                    } `
+                    -RollbackScript { Write-Host "Cannot rollback purge protection" -ForegroundColor Red } `
+                    -Impact "High"
+                
+                if ($result.Success) { $successCount++ } else { $failCount++ }
+            }
+            else {
+                Write-SafeLog "Skipped enabling purge protection on $($kv.Name)" "WARNING"
+            }
+        }
+    }
+    
+    Write-SafeLog "Key Vault security fixes complete: $successCount succeeded, $failCount failed" "SUCCESS"
+}
+
+function Fix-NSGDenyRules {
+    Write-Host "`n============================================================" -ForegroundColor Cyan
+    Write-Host "FIXING: NSG Default Deny Rules" -ForegroundColor Cyan
+    Write-Host "============================================================`n" -ForegroundColor Cyan
+    
+    # Create backup
+    $backup = New-BackupConfiguration -Type "NSG"
+    if (-not $backup) {
+        Write-SafeLog "Cannot proceed without backup" "ERROR"
+        return
+    }
+    
+    # Get all NSGs
+    Write-SafeLog "Scanning NSGs..." "INFO"
+    $nsgs = az network nsg list --output json | ConvertFrom-Json
+    
+    $nsgsMissingDeny = @()
+    
+    foreach ($nsg in $nsgs) {
+        $hasInboundDeny = $false
+        $hasOutboundDeny = $false
+        
+        foreach ($rule in $nsg.securityRules) {
+            if ($rule.direction -eq "Inbound" -and $rule.access -eq "Deny" -and $rule.priority -eq 4096) {
+                $hasInboundDeny = $true
+            }
+            if ($rule.direction -eq "Outbound" -and $rule.access -eq "Deny" -and $rule.priority -eq 4096) {
+                $hasOutboundDeny = $true
+            }
+        }
+        
+        if (-not $hasInboundDeny -or -not $hasOutboundDeny) {
+            $nsgsMissingDeny += [PSCustomObject]@{
+                Name = $nsg.name
+                ResourceGroup = $nsg.resourceGroup
+                MissingInbound = -not $hasInboundDeny
+                MissingOutbound = -not $hasOutboundDeny
+            }
+        }
+    }
+    
+    Write-SafeLog "Found $($nsgsMissingDeny.Count) NSGs missing explicit deny rules" "INFO"
+    
+    if ($nsgsMissingDeny.Count -eq 0) {
+        Write-SafeLog "All NSGs have explicit deny rules" "SUCCESS"
+        return
+    }
+    
+    # Get approval
+    $approved = Get-Approval `
+        -Action "Add explicit deny rules to $($nsgsMissingDeny.Count) NSGs" `
+        -Impact "LOW - Azure has implicit deny, this makes it explicit" `
+        -RollbackPlan "Delete rules with priority 4096 from backup: $backup"
+    
+    if (-not $approved) {
+        Write-SafeLog "User cancelled operation" "WARNING"
+        return
+    }
+    
+    # Fix each NSG
+    $successCount = 0
+    $failCount = 0
+    
+    foreach ($nsg in $nsgsMissingDeny) {
+        Write-SafeLog "Fixing: $($nsg.Name)" "INFO"
+        
+        # Add inbound deny
+        if ($nsg.MissingInbound) {
+            $result = Invoke-SafeChange `
+                -Description "Add explicit deny all inbound to $($nsg.Name)" `
+                -ChangeScript {
+                    az network nsg rule create `
+                        --nsg-name $nsg.Name `
+                        --resource-group $nsg.ResourceGroup `
+                        --name "Deny-All-Inbound" `
+                        --priority 4096 `
+                        --direction Inbound `
+                        --access Deny `
+                        --protocol '*' `
+                        --source-address-prefixes '*' `
+                        --source-port-ranges '*' `
+                        --destination-address-prefixes '*' `
+                        --destination-port-ranges '*' `
+                        --output none
+                } `
+                -RollbackScript {
+                    az network nsg rule delete `
+                        --nsg-name $nsg.Name `
+                        --resource-group $nsg.ResourceGroup `
+                        --name "Deny-All-Inbound" `
+                        --output none
+                } `
+                -Impact "Low"
+            
+            if ($result.Success) { $successCount++ } else { $failCount++ }
+        }
+        
+        # Add outbound deny (optional - may break outbound connectivity)
+        if ($nsg.MissingOutbound) {
+            Write-Host "`nWARNING: Adding explicit outbound deny may break connectivity!" -ForegroundColor Red
+            Write-Host "Ensure you have explicit allow rules for required outbound traffic." -ForegroundColor Red
+            $confirm = Read-Host "Add explicit outbound deny? (yes/no)"
+            
+            if ($confirm -eq "yes") {
+                $result = Invoke-SafeChange `
+                    -Description "Add explicit deny all outbound to $($nsg.Name)" `
+                    -ChangeScript {
+                        az network nsg rule create `
+                            --nsg-name $nsg.Name `
+                            --resource-group $nsg.ResourceGroup `
+                            --name "Deny-All-Outbound" `
+                            --priority 4096 `
+                            --direction Outbound `
+                            --access Deny `
+                            --protocol '*' `
+                            --source-address-prefixes '*' `
+                            --destination-port-ranges '*' `
+                            --output none
+                    } `
+                    -RollbackScript {
+                        az network nsg rule delete `
+                            --nsg-name $nsg.Name `
+                            --resource-group $nsg.ResourceGroup `
+                            --name "Deny-All-Outbound" `
+                            --output none
+                    } `
+                    -Impact "High"
+                
+                if ($result.Success) { $successCount++ } else { $failCount++ }
+            }
+        }
+    }
+    
+    Write-SafeLog "NSG deny rule fixes complete: $successCount succeeded, $failCount failed" "SUCCESS"
+}
+
+#endregion
+
+#region Main Execution
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "  SAFE AZURE REMEDIATION SCRIPT"
+Write-Host "============================================================"
+Write-Host ""
+Write-Host "Environment: $Environment" -ForegroundColor $(if($Environment -eq "PROD"){"Red"}else{"Green"})
+Write-Host "Fix Categories: $($FixCategories -join ', ')" -ForegroundColor Cyan
+Write-Host "Dry Run: $DryRun" -ForegroundColor $(if($DryRun){"Magenta"}else{"Yellow"})
+Write-Host "Backup Path: $BackupPath" -ForegroundColor White
+Write-Host ""
+
+# Create backup directory
+if (-not (Test-Path $BackupPath)) {
+    New-Item -ItemType Directory -Path $BackupPath -Force | Out-Null
+    Write-SafeLog "Created backup directory: $BackupPath" "INFO"
+}
+
+# Check prerequisites
+if (-not (Test-Prerequisites)) {
+    Write-SafeLog "Prerequisites check failed. Cannot proceed." "ERROR"
+    exit 1
+}
+
+# Production safety check
+if ($Environment -eq "PROD" -and -not $DryRun) {
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host "  PRODUCTION ENVIRONMENT WARNING" -ForegroundColor Red
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "You are about to modify PRODUCTION resources!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Before proceeding, confirm you have:" -ForegroundColor Red
+    Write-Host "  [1] Tested these changes in DEV and TEST environments" -ForegroundColor Yellow
+    Write-Host "  [2] Notified all stakeholders and application owners" -ForegroundColor Yellow
+    Write-Host "  [3] Scheduled an approved maintenance window" -ForegroundColor Yellow
+    Write-Host "  [4] Created and verified configuration backups" -ForegroundColor Yellow
+    Write-Host "  [5] Prepared detailed rollback procedures" -ForegroundColor Yellow
+    Write-Host "  [6] Have on-call team available for support" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Red
+    Write-Host ""
+    
+    $prodConfirm = Read-Host "Type 'I HAVE APPROVAL FOR PRODUCTION CHANGES' to proceed"
+    if ($prodConfirm -ne "I HAVE APPROVAL FOR PRODUCTION CHANGES") {
+        Write-SafeLog "Production safety check failed. Exiting." "ERROR"
+        exit 1
+    }
+}
+
+# Execute fixes based on categories
+$startTime = Get-Date
+
+if ($FixCategories -contains "All" -or $FixCategories -contains "StaleRBAC") {
+    Fix-StaleRBACAssignments
+}
+
+if ($FixCategories -contains "All" -or $FixCategories -contains "StorageSecurity") {
+    Fix-StorageSecurity
+}
+
+if ($FixCategories -contains "All" -or $FixCategories -contains "KeyVaultSecurity") {
+    Fix-KeyVaultSecurity
+}
+
+if ($FixCategories -contains "All" -or $FixCategories -contains "NSGDeny") {
+    Fix-NSGDenyRules
+}
+
+# Summary
+$endTime = Get-Date
+$duration = $endTime - $startTime
+
+Write-Host ""
+Write-Host "============================================================"
+Write-Host "  REMEDIATION COMPLETE"
+Write-Host "============================================================"
+Write-Host ""
+Write-Host "Duration: $($duration.ToString('mm\:ss'))" -ForegroundColor Cyan
+Write-Host "Backups saved to: $BackupPath" -ForegroundColor Cyan
+Write-Host ""
+
+if ($DryRun) {
+    Write-Host "This was a DRY RUN - no changes were made" -ForegroundColor Magenta
+    Write-Host "Review the output and run without -DryRun to apply changes" -ForegroundColor Magenta
+}
+else {
+    Write-Host "Changes have been applied" -ForegroundColor Green
+    Write-Host "Verify functionality and monitor for issues" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Cyan
+Write-Host "1. Review logs in: $BackupPath" -ForegroundColor White
+Write-Host "2. Test application functionality" -ForegroundColor White
+Write-Host "3. Monitor Azure Activity Logs for errors" -ForegroundColor White
+Write-Host "4. Run the analyzer script again to verify fixes" -ForegroundColor White
+Write-Host ""
+
+#endregion

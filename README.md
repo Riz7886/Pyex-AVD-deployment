@@ -1,8 +1,16 @@
+<<<<<<< HEAD
 # Company AVD Deployment - Professional Edition
 
 ## 📁 Directory Structure
 `
 AVD-Deployment/
+=======
+# health AVD Deployment - Professional Edition
+
+## 📁 Directory Structure
+`
+health-AVD-Deployment/
+>>>>>>> 64bf7bae316f6e3e16096ce461c6e2121cb7398f
 ├── Deploy-AVD.ps1           # Main deployment script
 ├── Audit-Complete.ps1       # Comprehensive audit script
 ├── Configuration/           # Deployment configurations & credentials

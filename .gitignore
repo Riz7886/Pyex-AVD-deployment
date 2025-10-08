@@ -1,4 +1,27 @@
-﻿Configuration/*.json
+# Backup folders
+Backup-*/
+
+# Configuration files with secrets
+Config/*.json
+Configuration/*.json
+
+# Audit reports
 Audit-Reports/*.csv
 Audit-Reports/*.html
+IAM-Security-Reports/*.csv
+IAM-Security-Reports/*.html
+
+# Logs
 *.log
+*.tmp
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace

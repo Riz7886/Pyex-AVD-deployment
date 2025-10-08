@@ -1,5 +1,9 @@
 # Azure Virtual Desktop Enterprise Architecture
+<<<<<<< HEAD
 ## Company Health Company - Healthcare VDI Solution
+=======
+## Health Company - Healthcare VDI Solution
+>>>>>>> 64bf7bae316f6e3e16096ce461c6e2121cb7398f
 
 ---
 

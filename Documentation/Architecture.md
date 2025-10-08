@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Azure Virtual Desktop - Company Health
+=======
+﻿# Azure Virtual Desktop -  Health
+>>>>>>> 64bf7bae316f6e3e16096ce461c6e2121cb7398f
 ## Complete Architecture & Cost Analysis
 
 ### Deployment Summary

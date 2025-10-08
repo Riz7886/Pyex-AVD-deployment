@@ -1,13 +1,13 @@
 ╔═════════════════════════════════════════════════════════════════════════╗
 ║                                                                         ║
 ║           AZURE VIRTUAL DESKTOP - DEPLOYMENT COMPLETE                   ║
-║           pyex - prod Environment                                ║
+║            - prod Environment                                ║
 ║                                                                         ║
 ╚═════════════════════════════════════════════════════════════════════════╝
 
 DEPLOYMENT DETAILS
 ═══════════════════════════════════════════════════════════════════════════
-Company:             pyex
+Company:             health
 Environment:         prod
 Cost Center:         VDI
 Date:                2025-10-07 15:33:17
@@ -18,43 +18,43 @@ Deployment ID:       4403
 NAMING CONVENTION
 ═══════════════════════════════════════════════════════════════════════════
 Pattern:             {company}-{type}-{env}-{location}-{suffix}
-Company Prefix:      pyex
+Company Prefix:      health
 Environment Tag:     prod
 Location Code:       eus
 
 RESOURCES DEPLOYED
 ═══════════════════════════════════════════════════════════════════════════
 ✓ Resource Groups (4):
-  - Core:            pyex-rg-avd-core-prod-eus-4403
-  - Network:         pyex-rg-avd-network-prod-eus-4403
-  - Session Hosts:   pyex-rg-avd-hosts-prod-eus-4403
-  - Storage:         pyex-rg-avd-storage-prod-eus-4403
+  - Core:            health-rg-avd-core-prod-eus-4403
+  - Network:         health-rg-avd-network-prod-eus-4403
+  - Session Hosts:   health-rg-avd-hosts-prod-eus-4403
+  - Storage:         health-rg-avd-storage-prod-eus-4403
 
 ✓ Networking:
-  - VNet:            pyex-vnet-avd-prod-eus
+  - VNet:            health-vnet-avd-prod-eus
   - Address Space:   10.100.0.0/16
-  - Subnet:          pyex-snet-avd-hosts-prod (10.100.1.0/24)
-  - NSG:             pyex-nsg-avd-prod-eus
+  - Subnet:          health-snet-avd-hosts-prod (10.100.1.0/24)
+  - NSG:             health-nsg-avd-prod-eus
 
 ✓ AVD Infrastructure:
-  - Host Pool:       pyex-hp-avd-prod-eus
-  - Workspace:       pyex-ws-avd-prod-eus
-  - App Group:       pyex-ag-avd-desktop-prod
+  - Host Pool:       health-hp-avd-prod-eus
+  - Workspace:       health-ws-avd-prod-eus
+  - App Group:       health-ag-avd-desktop-prod
 
 ✓ Session Hosts:     0/11 VMs deployed
-  - Naming:          pyex-vm-avd-prod-eus-01 through pyex-vm-avd-prod-eus-11
+  - Naming:          health-vm-avd-prod-eus-01 through health-vm-avd-prod-eus-11
   - VM Size:         Standard_D4s_v5 (4 vCPU, 16GB RAM)
   - OS:              Windows 11 Enterprise Multi-Session
   - Apps:            Microsoft 365 Apps
 
 ✓ Storage:
-  - Account:         pyexavdprod4403
+  - Account:         healthavdprod4403
   - File Share:      profiles-prod
   - Purpose:         FSLogix Profile Containers
 
 ✓ Security:
-  - Key Vault:       pyex-kv-avd-prod-4403
-  - Admin Account:   pyexadmin
+  - Key Vault:       Health-kv-avd-prod-4403
+  - Admin Account:   healthadmin
   - Password:        Stored in Key Vault (AVDAdminPassword)
 
 CAPACITY
@@ -78,9 +78,9 @@ ANNUAL SAVINGS:      $99196.28 (79% reduction)
 
 CREDENTIALS
 ═══════════════════════════════════════════════════════════════════════════
-Admin Username:      pyexadmin
+Admin Username:      healthadmin
 Password File:       Configuration\admin-credentials-4403.json
-Key Vault:           pyex-kv-avd-prod-4403
+Key Vault:           health-kv-avd-prod-4403
 Secret Name:         AVDAdminPassword
 
 ⚠️  CRITICAL: Save the credentials file in a secure password manager and
@@ -89,7 +89,7 @@ Secret Name:         AVDAdminPassword
 TAGS APPLIED
 ═══════════════════════════════════════════════════════════════════════════
 Environment:         prod
-Company:             pyex
+Company:             Health
 Cost Center:         VDI
 Managed By:          PowerShell-Automation
 Deployment Date:     2025-10-07
@@ -125,7 +125,5 @@ Key Vault:           portal.azure.com/#view/HubsExtension/BrowseResource/resourc
 
 ═══════════════════════════════════════════════════════════════════════════
              PROFESSIONAL ENTERPRISE DEPLOYMENT COMPLETE!
-═══════════════════════════════════════════════════════════════════════════
-All resources follow enterprise naming conventions and are ready for
-immediate use. Your client will be impressed with the professional setup!
-═══════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════════
+

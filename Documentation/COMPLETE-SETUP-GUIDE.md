@@ -1,5 +1,9 @@
 # Complete Setup Guide - Azure Virtual Desktop
+<<<<<<< HEAD
 ## Company Health Company VDI Deployment
+=======
+##  Health Company VDI Deployment
+>>>>>>> 64bf7bae316f6e3e16096ce461c6e2121cb7398f
 
 ---
 
