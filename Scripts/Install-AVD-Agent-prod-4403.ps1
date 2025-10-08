@@ -1,9 +1,9 @@
 # AVD Agent Installation Script
-# Company: pyex | Environment: prod
+# Company: Company | Environment: prod
 # Run this on each session host VM
 
 $ErrorActionPreference = 'Stop'
-Write-Host "Installing AVD Agents for pyex - prod environment..." -ForegroundColor Cyan
+Write-Host "Installing AVD Agents for Company - prod environment..." -ForegroundColor Cyan
 
 # Download AVD Agent
 $agentUrl = "https://query.prod.cms.rt.microsoft.com/cms/api/am/binary/RWrmXv"
@@ -29,11 +29,11 @@ Start-Process msiexec.exe -ArgumentList "/i $bootLoaderPath /quiet /qn /norestar
 Write-Host "Configuring FSLogix..."
 New-Item -Path "HKLM:\SOFTWARE\FSLogix\Profiles" -Force | Out-Null
 Set-ItemProperty -Path "HKLM:\SOFTWARE\FSLogix\Profiles" -Name "Enabled" -Value 1
-Set-ItemProperty -Path "HKLM:\SOFTWARE\FSLogix\Profiles" -Name "VHDLocations" -Value "\\pyexavdprod4403.file.core.windows.net\profiles-prod"
+Set-ItemProperty -Path "HKLM:\SOFTWARE\FSLogix\Profiles" -Name "VHDLocations" -Value "\\Companyavdprod4403.file.core.windows.net\profiles-prod"
 
 Write-Host "
 ✓ AVD Agent installation complete!" -ForegroundColor Green
-Write-Host "Environment: prod | Host Pool: pyex-hp-avd-prod-eus" -ForegroundColor Cyan
+Write-Host "Environment: prod | Host Pool: Company-hp-avd-prod-eus" -ForegroundColor Cyan
 Write-Host "Restarting in 10 seconds..." -ForegroundColor Yellow
 Start-Sleep -Seconds 10
 Restart-Computer -Force

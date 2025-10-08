@@ -1,5 +1,5 @@
 # Complete Setup Guide - Azure Virtual Desktop
-## PYEX Health Company VDI Deployment
+## Company Health Company VDI Deployment
 
 ---
 
@@ -18,7 +18,7 @@ After deployment completes, run on each session host:
 
 ### Step 3: Assign Users
 ```powershell
-.\Scripts\AVD-User-Onboarding.ps1 -CsvPath "Users\avd-users.csv" -AppGroupName "ag-pyexhealth-desktop" -ResourceGroupName "rg-pyexhealth-avd-core-XXXX"
+.\Scripts\AVD-User-Onboarding.ps1 -CsvPath "Users\avd-users.csv" -AppGroupName "ag-Companyhealth-desktop" -ResourceGroupName "rg-Companyhealth-avd-core-XXXX"
 ```
 
 ---
@@ -89,7 +89,7 @@ After deployment completes, run on each session host:
 **Set Up Alerts:**
 ```powershell
 # High CPU alert
-New-AzMetricAlertRuleV2 -Name "AVD-High-CPU" -ResourceGroupName "rg-pyexhealth-avd-hosts-XXXX" -Condition $cpuCondition
+New-AzMetricAlertRuleV2 -Name "AVD-High-CPU" -ResourceGroupName "rg-Companyhealth-avd-hosts-XXXX" -Condition $cpuCondition
 ```
 
 **Create Dashboard:**
@@ -137,7 +137,7 @@ New-AzMetricAlertRuleV2 -Name "AVD-High-CPU" -ResourceGroupName "rg-pyexhealth-a
 
 - **Microsoft Docs:** https://docs.microsoft.com/azure/virtual-desktop/
 - **Azure Support:** https://portal.azure.com
-- **Internal IT:** avd-admin@pyexhealth.com
+- **Internal IT:** avd-admin@Companyhealth.com
 
 ---
 

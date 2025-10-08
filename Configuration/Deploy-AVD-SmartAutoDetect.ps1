@@ -1,4 +1,4 @@
-cd D:\PYEX-AVD-Deployment
+cd D:\AVD-Deployment
 
 # Create SMART AUTO-DETECT script
 $smartScript = @'
@@ -16,7 +16,7 @@ $smartScript = @'
 #>
 
 param(
-    [string]$CompanyPrefix = "pyex",
+    [string]$CompanyPrefix = "Company",
     [string]$Environment = "prod",
     [string]$CostCenter = "VDI",
     [string]$LocationCode = "eus",

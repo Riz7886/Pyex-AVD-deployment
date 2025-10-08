@@ -18,7 +18,7 @@
     Resource Group name
     
 .EXAMPLE
-    .\AVD-User-Onboarding.ps1 -CsvPath "Users\avd-users.csv" -AppGroupName "ag-pyexhealth-desktop" -ResourceGroupName "rg-pyexhealth-avd-core-1234"
+    .\AVD-User-Onboarding.ps1 -CsvPath "Users\avd-users.csv" -AppGroupName "ag-Companyhealth-desktop" -ResourceGroupName "rg-Companyhealth-avd-core-1234"
 #>
 
 param(

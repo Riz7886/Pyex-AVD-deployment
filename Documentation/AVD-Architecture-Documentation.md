@@ -1,11 +1,11 @@
 # Azure Virtual Desktop Enterprise Architecture
-## PYEX Health Company - Healthcare VDI Solution
+## Company Health Company - Healthcare VDI Solution
 
 ---
 
 ## Executive Summary
 
-Complete Azure Virtual Desktop (AVD) architecture for PYEX Health Company, providing secure, HIPAA-compliant virtual desktop infrastructure for 50 concurrent healthcare workers.
+Complete Azure Virtual Desktop (AVD) architecture for Company Health Company, providing secure, HIPAA-compliant virtual desktop infrastructure for 50 concurrent healthcare workers.
 
 ### Business Value
 
@@ -171,4 +171,4 @@ Complete Azure Virtual Desktop (AVD) architecture for PYEX Health Company, provi
 
 **Document Version:** 1.0  
 **Last Updated:** October 2025  
-**Owner:** PYEX Health IT Department
+**Owner:** Company Health IT Department
