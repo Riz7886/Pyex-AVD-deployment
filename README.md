@@ -1,8 +1,8 @@
-# PYEX AVD Deployment - Professional Edition
+# health AVD Deployment - Professional Edition
 
 ## 📁 Directory Structure
 `
-PYEX-AVD-Deployment/
+health-AVD-Deployment/
 ├── Deploy-AVD.ps1           # Main deployment script
 ├── Audit-Complete.ps1       # Comprehensive audit script
 ├── Configuration/           # Deployment configurations & credentials
