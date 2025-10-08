@@ -1,6 +1,3 @@
-#Requires -Version 5.1
-#Requires -Modules Az.Accounts, Az.Resources, Az.Network, Az.Compute, Az.Storage, Az.KeyVault
-
 <#
 .SYNOPSIS
     Azure Environment Analyzer - Comprehensive Detection & Auto-Remediation Tool
@@ -25,20 +22,17 @@
     Specific categories to fix. Options: RBAC, Network, Security, Permissions, Users, All
 
 .EXAMPLE
-    # Detection only (recommended first run)
     .\Analyze-AzureEnvironment.ps1
 
 .EXAMPLE
-    # Detection and create fix scripts
     .\Analyze-AzureEnvironment.ps1 -ReportPath "C:\Reports"
 
 .EXAMPLE
-    # Fix only RBAC issues after review
     .\Analyze-AzureEnvironment.ps1 -AutoFix -FixCategories RBAC
 
 .AUTHOR
     Azure DevOps Team
-    Version: 2.0
+    Version: 3.0
     Last Updated: 2025-10-08
 #>
 
@@ -75,14 +69,14 @@ function Write-Log {
         "SUCCESS" = "Green"
     }
     
-    $icon = @{
-        "INFO"    = "ℹ️"
-        "WARNING" = "⚠️"
-        "ERROR"   = "❌"
-        "SUCCESS" = "✅"
+    $prefix = @{
+        "INFO"    = "[INFO]"
+        "WARNING" = "[WARN]"
+        "ERROR"   = "[ERROR]"
+        "SUCCESS" = "[OK]"
     }
     
-    Write-Host "[$timestamp] $($icon[$Level]) $Message" -ForegroundColor $colors[$Level]
+    Write-Host "[$timestamp] $($prefix[$Level]) $Message" -ForegroundColor $colors[$Level]
 }
 
 function New-Issue {
@@ -92,7 +86,7 @@ function New-Issue {
         [string]$Resource,
         [string]$Description,
         [string]$Recommendation,
-        [scriptblock]$FixScript
+        [string]$FixScript
     )
     
     return [PSCustomObject]@{
@@ -102,8 +96,18 @@ function New-Issue {
         Resource       = $Resource
         Description    = $Description
         Recommendation = $Recommendation
-        FixScript      = $FixScript.ToString()
+        FixScript      = $FixScript
         Status         = "Detected"
+    }
+}
+
+function Test-AzureCLI {
+    try {
+        $version = az version --output json 2>&1 | ConvertFrom-Json
+        return $true
+    }
+    catch {
+        return $false
     }
 }
 
@@ -111,17 +115,12 @@ function New-Issue {
 
 #region Main Script
 
-Write-Host @"
-
-╔══════════════════════════════════════════════════════════════════╗
-║                                                                  ║
-║     🔍 AZURE ENVIRONMENT ANALYZER & AUTO-REMEDIATION            ║
-║                                                                  ║
-║     Enterprise-Grade Detection & Fix Tool                       ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
-
-"@ -ForegroundColor Cyan
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "   AZURE ENVIRONMENT ANALYZER & AUTO-REMEDIATION"
+Write-Host "   Enterprise-Grade Detection & Fix Tool"
+Write-Host "=============================================================="
+Write-Host ""
 
 # Initialize
 $Issues = @()
@@ -135,395 +134,402 @@ if (-not (Test-Path $ReportPath)) {
 
 Write-Log "Starting Azure environment analysis..." "INFO"
 
+# Check Azure CLI
+if (-not (Test-AzureCLI)) {
+    Write-Log "Azure CLI not found. Please install Azure CLI from https://aka.ms/installazurecli" "ERROR"
+    exit 1
+}
+
 # Connect to Azure
 try {
-    if ($SubscriptionId) {
-        Set-AzContext -SubscriptionId $SubscriptionId -ErrorAction Stop | Out-Null
+    Write-Log "Checking Azure CLI login status..." "INFO"
+    $accountInfo = az account show 2>&1 | ConvertFrom-Json
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "Not logged in. Please run: az login" "ERROR"
+        exit 1
     }
-    $context = Get-AzContext
-    Write-Log "Connected to: $($context.Subscription.Name)" "SUCCESS"
-} catch {
+    
+    if ($SubscriptionId) {
+        az account set --subscription $SubscriptionId
+        $accountInfo = az account show | ConvertFrom-Json
+    }
+    
+    Write-Log "Connected to: $($accountInfo.name)" "SUCCESS"
+    $currentSubscriptionId = $accountInfo.id
+} 
+catch {
     Write-Log "Failed to connect to Azure: $_" "ERROR"
     exit 1
 }
 
 #region 1. RBAC & Permissions Analysis
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  📋 ANALYZING: RBAC & PERMISSIONS                                ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYZING: RBAC & PERMISSIONS"
+Write-Host "=============================================================="
+Write-Host ""
 
 Write-Log "Analyzing RBAC assignments..." "INFO"
 
 # Get all role assignments
-$roleAssignments = Get-AzRoleAssignment
+$roleAssignmentsJson = az role assignment list --all --output json 2>&1
+$roleAssignments = $roleAssignmentsJson | ConvertFrom-Json
 
 # Check for Owner permissions
-$ownerAssignments = $roleAssignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }
+$ownerAssignments = $roleAssignments | Where-Object { $_.roleDefinitionName -eq "Owner" }
 foreach ($owner in $ownerAssignments) {
-    if ($owner.ObjectType -eq "User") {
+    if ($owner.principalType -eq "User") {
+        $fixCmd = "az role assignment delete --assignee `"$($owner.principalId)`" --role `"Owner`" --scope `"$($owner.scope)`"`n"
+        $fixCmd += "az role assignment create --assignee `"$($owner.principalId)`" --role `"Contributor`" --scope `"$($owner.scope)`""
+        
         $Issues += New-Issue `
             -Category "RBAC" `
             -Severity "High" `
-            -Resource $owner.DisplayName `
-            -Description "User has Owner permissions at scope: $($owner.Scope)" `
+            -Resource $owner.principalName `
+            -Description "User has Owner permissions at scope: $($owner.scope)" `
             -Recommendation "Review if Owner role is necessary. Consider Contributor instead." `
-            -FixScript {
-                # Remove-AzRoleAssignment -ObjectId $owner.ObjectId -RoleDefinitionName "Owner" -Scope $owner.Scope
-                # New-AzRoleAssignment -ObjectId $owner.ObjectId -RoleDefinitionName "Contributor" -Scope $owner.Scope
-            }
+            -FixScript $fixCmd
     }
 }
 
-# Check for stale role assignments (users not in AD)
+# Check for stale role assignments
 Write-Log "Checking for stale RBAC assignments..." "INFO"
 foreach ($assignment in $roleAssignments) {
-    if ($assignment.ObjectType -eq "Unknown" -or $assignment.DisplayName -eq "") {
+    if ([string]::IsNullOrEmpty($assignment.principalName) -or $assignment.principalName -eq "Unknown") {
+        $fixCmd = "az role assignment delete --assignee `"$($assignment.principalId)`" --scope `"$($assignment.scope)`""
+        
         $Issues += New-Issue `
             -Category "RBAC" `
             -Severity "Medium" `
-            -Resource $assignment.ObjectId `
+            -Resource $assignment.principalId `
             -Description "Stale RBAC assignment detected for deleted identity" `
             -Recommendation "Remove orphaned role assignment" `
-            -FixScript {
-                # Remove-AzRoleAssignment -ObjectId $assignment.ObjectId -Scope $assignment.Scope
-            }
+            -FixScript $fixCmd
     }
 }
 
-# Check for overly permissive custom roles
-$customRoles = Get-AzRoleDefinition | Where-Object { $_.IsCustom -eq $true }
+# Check for custom roles with wildcard permissions
+$customRolesJson = az role definition list --custom-role-only true --output json 2>&1
+$customRoles = $customRolesJson | ConvertFrom-Json
+
 foreach ($role in $customRoles) {
-    if ($role.Actions -contains "*") {
+    if ($role.permissions.actions -contains "*") {
         $Issues += New-Issue `
             -Category "RBAC" `
             -Severity "Critical" `
-            -Resource $role.Name `
+            -Resource $role.roleName `
             -Description "Custom role has wildcard (*) permissions" `
             -Recommendation "Limit custom role to specific actions only" `
-            -FixScript {
-                # Update custom role with specific permissions
-            }
+            -FixScript "# Review and update role definition: az role definition update --role-definition role.json"
     }
 }
 
-Write-Log "RBAC analysis complete. Found $($Issues | Where-Object Category -eq 'RBAC' | Measure-Object).Count issues" "INFO"
+Write-Log "RBAC analysis complete. Found $(($Issues | Where-Object {$_.Category -eq 'RBAC'}).Count) issues" "INFO"
 
 #endregion
 
 #region 2. Network Configuration Analysis
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  🌐 ANALYZING: NETWORK CONFIGURATION                             ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYZING: NETWORK CONFIGURATION"
+Write-Host "=============================================================="
+Write-Host ""
 
 Write-Log "Analyzing network security groups..." "INFO"
 
 # Get all NSGs
-$nsgs = Get-AzNetworkSecurityGroup
+$nsgsJson = az network nsg list --output json 2>&1
+$nsgs = $nsgsJson | ConvertFrom-Json
 
 foreach ($nsg in $nsgs) {
     # Check for unrestricted inbound rules
-    $dangerousRules = $nsg.SecurityRules | Where-Object {
-        $_.Direction -eq "Inbound" -and
-        $_.Access -eq "Allow" -and
-        ($_.SourceAddressPrefix -eq "*" -or $_.SourceAddressPrefix -eq "Internet" -or $_.SourceAddressPrefix -eq "0.0.0.0/0")
+    $dangerousRules = $nsg.securityRules | Where-Object {
+        $_.direction -eq "Inbound" -and
+        $_.access -eq "Allow" -and
+        ($_.sourceAddressPrefix -eq "*" -or $_.sourceAddressPrefix -eq "Internet" -or $_.sourceAddressPrefix -eq "0.0.0.0/0")
     }
     
     foreach ($rule in $dangerousRules) {
         $severity = "Critical"
-        if ($rule.DestinationPortRange -eq "22" -or $rule.DestinationPortRange -eq "3389") {
+        if ($rule.destinationPortRange -eq "22" -or $rule.destinationPortRange -eq "3389") {
             $severity = "Critical"
-        } elseif ($rule.DestinationPortRange -eq "443" -or $rule.DestinationPortRange -eq "80") {
+        } elseif ($rule.destinationPortRange -eq "443" -or $rule.destinationPortRange -eq "80") {
             $severity = "High"
         }
+        
+        $fixCmd = "az network nsg rule update --resource-group `"$($nsg.resourceGroup)`" --nsg-name `"$($nsg.name)`" --name `"$($rule.name)`" --source-address-prefixes `"YOUR_IP/32`""
         
         $Issues += New-Issue `
             -Category "Network" `
             -Severity $severity `
-            -Resource "$($nsg.Name) - Rule: $($rule.Name)" `
-            -Description "Unrestricted inbound access from Internet on port(s): $($rule.DestinationPortRange)" `
+            -Resource "$($nsg.name) - Rule: $($rule.name)" `
+            -Description "Unrestricted inbound access from Internet on port(s): $($rule.destinationPortRange)" `
             -Recommendation "Restrict source to specific IP ranges or use Azure Bastion for management" `
-            -FixScript {
-                # $rule.SourceAddressPrefix = "YourTrustedIP/32"
-                # Set-AzNetworkSecurityGroup -NetworkSecurityGroup $nsg
-            }
+            -FixScript $fixCmd
     }
     
     # Check for default deny rule
-    $hasDefaultDeny = $nsg.SecurityRules | Where-Object {
-        $_.Priority -eq 4096 -and $_.Access -eq "Deny"
+    $hasDefaultDeny = $nsg.securityRules | Where-Object {
+        $_.priority -eq 4096 -and $_.access -eq "Deny"
     }
     
     if (-not $hasDefaultDeny) {
+        $fixCmd = "az network nsg rule create --resource-group `"$($nsg.resourceGroup)`" --nsg-name `"$($nsg.name)`" --name `"DenyAllInbound`" --priority 4096 --direction Inbound --access Deny --protocol '*' --source-address-prefixes '*' --source-port-ranges '*' --destination-address-prefixes '*' --destination-port-ranges '*'"
+        
         $Issues += New-Issue `
             -Category "Network" `
             -Severity "Medium" `
-            -Resource $nsg.Name `
+            -Resource $nsg.name `
             -Description "NSG missing explicit default deny rule" `
             -Recommendation "Add explicit deny all rule at lowest priority" `
-            -FixScript {
-                # Add-AzNetworkSecurityRuleConfig -NetworkSecurityGroup $nsg -Name "DenyAllInbound" -Access Deny -Protocol "*" -Direction Inbound -Priority 4096 -SourceAddressPrefix "*" -SourcePortRange "*" -DestinationAddressPrefix "*" -DestinationPortRange "*"
-            }
+            -FixScript $fixCmd
     }
 }
 
 # Check for subnets without NSGs
 Write-Log "Checking for subnets without NSGs..." "INFO"
-$vnets = Get-AzVirtualNetwork
+$vnetsJson = az network vnet list --output json 2>&1
+$vnets = $vnetsJson | ConvertFrom-Json
+
 foreach ($vnet in $vnets) {
-    foreach ($subnet in $vnet.Subnets) {
-        if (-not $subnet.NetworkSecurityGroup -and $subnet.Name -ne "GatewaySubnet") {
+    foreach ($subnet in $vnet.subnets) {
+        if (-not $subnet.networkSecurityGroup -and $subnet.name -ne "GatewaySubnet") {
+            $fixCmd = "az network vnet subnet update --resource-group `"$($vnet.resourceGroup)`" --vnet-name `"$($vnet.name)`" --name `"$($subnet.name)`" --network-security-group `"YOUR_NSG_NAME`""
+            
             $Issues += New-Issue `
                 -Category "Network" `
                 -Severity "High" `
-                -Resource "$($vnet.Name)/$($subnet.Name)" `
+                -Resource "$($vnet.name)/$($subnet.name)" `
                 -Description "Subnet has no Network Security Group attached" `
                 -Recommendation "Attach NSG to subnet for traffic filtering" `
-                -FixScript {
-                    # $nsg = Get-AzNetworkSecurityGroup -Name "YourNSG" -ResourceGroupName "YourRG"
-                    # Set-AzVirtualNetworkSubnetConfig -VirtualNetwork $vnet -Name $subnet.Name -AddressPrefix $subnet.AddressPrefix -NetworkSecurityGroup $nsg
-                    # Set-AzVirtualNetwork -VirtualNetwork $vnet
-                }
+                -FixScript $fixCmd
         }
     }
 }
 
-Write-Log "Network analysis complete. Found $($Issues | Where-Object Category -eq 'Network' | Measure-Object).Count issues" "INFO"
+Write-Log "Network analysis complete. Found $(($Issues | Where-Object {$_.Category -eq 'Network'}).Count) issues" "INFO"
 
 #endregion
 
 #region 3. Security & Compliance Analysis
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  🔒 ANALYZING: SECURITY & COMPLIANCE                             ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYZING: SECURITY & COMPLIANCE"
+Write-Host "=============================================================="
+Write-Host ""
 
 Write-Log "Analyzing storage accounts..." "INFO"
 
 # Check storage accounts
-$storageAccounts = Get-AzStorageAccount
+$storageAccountsJson = az storage account list --output json 2>&1
+$storageAccounts = $storageAccountsJson | ConvertFrom-Json
 
 foreach ($sa in $storageAccounts) {
     # Check for HTTPS only
-    if (-not $sa.EnableHttpsTrafficOnly) {
+    if ($sa.enableHttpsTrafficOnly -ne $true) {
+        $fixCmd = "az storage account update --name `"$($sa.name)`" --resource-group `"$($sa.resourceGroup)`" --https-only true"
+        
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "Critical" `
-            -Resource $sa.StorageAccountName `
+            -Resource $sa.name `
             -Description "Storage account allows HTTP traffic (not secure)" `
             -Recommendation "Enable HTTPS-only traffic" `
-            -FixScript {
-                # Set-AzStorageAccount -ResourceGroupName $sa.ResourceGroupName -Name $sa.StorageAccountName -EnableHttpsTrafficOnly $true
-            }
+            -FixScript $fixCmd
     }
     
     # Check for public blob access
-    if ($sa.AllowBlobPublicAccess) {
+    if ($sa.allowBlobPublicAccess -eq $true) {
+        $fixCmd = "az storage account update --name `"$($sa.name)`" --resource-group `"$($sa.resourceGroup)`" --allow-blob-public-access false"
+        
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "High" `
-            -Resource $sa.StorageAccountName `
+            -Resource $sa.name `
             -Description "Storage account allows public blob access" `
             -Recommendation "Disable public blob access unless required" `
-            -FixScript {
-                # Set-AzStorageAccount -ResourceGroupName $sa.ResourceGroupName -Name $sa.StorageAccountName -AllowBlobPublicAccess $false
-            }
+            -FixScript $fixCmd
     }
     
     # Check for minimum TLS version
-    if ($sa.MinimumTlsVersion -ne "TLS1_2") {
+    if ($sa.minimumTlsVersion -ne "TLS1_2") {
+        $fixCmd = "az storage account update --name `"$($sa.name)`" --resource-group `"$($sa.resourceGroup)`" --min-tls-version TLS1_2"
+        
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "High" `
-            -Resource $sa.StorageAccountName `
+            -Resource $sa.name `
             -Description "Storage account not enforcing TLS 1.2" `
             -Recommendation "Set minimum TLS version to 1.2" `
-            -FixScript {
-                # Set-AzStorageAccount -ResourceGroupName $sa.ResourceGroupName -Name $sa.StorageAccountName -MinimumTlsVersion TLS1_2
-            }
+            -FixScript $fixCmd
     }
 }
 
 # Check Key Vaults
 Write-Log "Analyzing Key Vaults..." "INFO"
-$keyVaults = Get-AzKeyVault
+$keyVaultsJson = az keyvault list --output json 2>&1
+$keyVaults = $keyVaultsJson | ConvertFrom-Json
 
 foreach ($kv in $keyVaults) {
-    $kvDetails = Get-AzKeyVault -VaultName $kv.VaultName -ResourceGroupName $kv.ResourceGroupName
+    $kvDetailsJson = az keyvault show --name $kv.name --output json 2>&1
+    $kvDetails = $kvDetailsJson | ConvertFrom-Json
     
     # Check for soft delete
-    if (-not $kvDetails.EnableSoftDelete) {
+    if ($kvDetails.properties.enableSoftDelete -ne $true) {
+        $fixCmd = "az keyvault update --name `"$($kv.name)`" --enable-soft-delete true"
+        
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "High" `
-            -Resource $kv.VaultName `
+            -Resource $kv.name `
             -Description "Key Vault does not have soft delete enabled" `
             -Recommendation "Enable soft delete to prevent accidental deletion" `
-            -FixScript {
-                # Update-AzKeyVault -VaultName $kv.VaultName -ResourceGroupName $kv.ResourceGroupName -EnableSoftDelete
-            }
+            -FixScript $fixCmd
     }
     
     # Check for purge protection
-    if (-not $kvDetails.EnablePurgeProtection) {
+    if ($kvDetails.properties.enablePurgeProtection -ne $true) {
+        $fixCmd = "az keyvault update --name `"$($kv.name)`" --enable-purge-protection true"
+        
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "Medium" `
-            -Resource $kv.VaultName `
+            -Resource $kv.name `
             -Description "Key Vault does not have purge protection enabled" `
             -Recommendation "Enable purge protection for added security" `
-            -FixScript {
-                # Update-AzKeyVault -VaultName $kv.VaultName -ResourceGroupName $kv.ResourceGroupName -EnablePurgeProtection
-            }
+            -FixScript $fixCmd
     }
 }
 
-# Check VMs for missing extensions
+# Check VMs
 Write-Log "Analyzing Virtual Machines..." "INFO"
-$vms = Get-AzVM
+$vmsJson = az vm list -d --output json 2>&1
+$vms = $vmsJson | ConvertFrom-Json
 
 foreach ($vm in $vms) {
-    $vmDetails = Get-AzVM -ResourceGroupName $vm.ResourceGroupName -Name $vm.Name -Status
-    
-    # Check for managed disks
-    if ($vm.StorageProfile.OsDisk.ManagedDisk -eq $null) {
-        $Issues += New-Issue `
-            -Category "Security" `
-            -Severity "Medium" `
-            -Resource $vm.Name `
-            -Description "VM using unmanaged disks" `
-            -Recommendation "Migrate to managed disks for better security and management" `
-            -FixScript {
-                # Requires manual migration process
-            }
-    }
-    
-    # Check for encryption
-    $diskEncryptionStatus = Get-AzVMDiskEncryptionStatus -ResourceGroupName $vm.ResourceGroupName -VMName $vm.Name
-    if ($diskEncryptionStatus.OsVolumeEncrypted -ne "Encrypted") {
+    # Check for public IP
+    if ($vm.publicIps) {
         $Issues += New-Issue `
             -Category "Security" `
             -Severity "High" `
-            -Resource $vm.Name `
-            -Description "VM OS disk is not encrypted" `
-            -Recommendation "Enable Azure Disk Encryption" `
-            -FixScript {
-                # Set-AzVMDiskEncryptionExtension -ResourceGroupName $vm.ResourceGroupName -VMName $vm.Name -DiskEncryptionKeyVaultUrl "..." -DiskEncryptionKeyVaultId "..."
-            }
+            -Resource $vm.name `
+            -Description "VM has public IP address directly attached" `
+            -Recommendation "Use Azure Bastion or VPN for management access" `
+            -FixScript "# Remove public IP and configure Bastion - requires manual review"
     }
     
-    # Check for public IP
-    foreach ($nic in $vm.NetworkProfile.NetworkInterfaces) {
-        $nicDetails = Get-AzNetworkInterface -ResourceId $nic.Id
-        foreach ($ipConfig in $nicDetails.IpConfigurations) {
-            if ($ipConfig.PublicIpAddress) {
-                $Issues += New-Issue `
-                    -Category "Security" `
-                    -Severity "High" `
-                    -Resource $vm.Name `
-                    -Description "VM has public IP address directly attached" `
-                    -Recommendation "Use Azure Bastion or VPN for management access" `
-                    -FixScript {
-                        # Remove public IP and configure Bastion
-                    }
-            }
-        }
+    # Check for managed disks
+    $vmDetailsJson = az vm show --resource-group $vm.resourceGroup --name $vm.name --output json 2>&1
+    $vmDetails = $vmDetailsJson | ConvertFrom-Json
+    
+    if (-not $vmDetails.storageProfile.osDisk.managedDisk) {
+        $Issues += New-Issue `
+            -Category "Security" `
+            -Severity "Medium" `
+            -Resource $vm.name `
+            -Description "VM using unmanaged disks" `
+            -Recommendation "Migrate to managed disks for better security and management" `
+            -FixScript "# Requires manual migration process - use Azure Portal or PowerShell migration tools"
     }
 }
 
-Write-Log "Security analysis complete. Found $($Issues | Where-Object Category -eq 'Security' | Measure-Object).Count issues" "INFO"
+Write-Log "Security analysis complete. Found $(($Issues | Where-Object {$_.Category -eq 'Security'}).Count) issues" "INFO"
 
 #endregion
 
 #region 4. User & Access Analysis
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  👥 ANALYZING: USER ACCESS & SSO                                 ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYZING: USER ACCESS & SSO"
+Write-Host "=============================================================="
+Write-Host ""
 
 Write-Log "Analyzing user access patterns..." "INFO"
 
-# Check for users with no MFA
-# Note: This requires Azure AD Premium and specific permissions
-try {
-    # Placeholder for MFA check
-    Write-Log "Checking MFA status requires Azure AD Premium..." "WARNING"
-    
-    # Check for guest users with elevated permissions
-    $guestAssignments = $roleAssignments | Where-Object { $_.ObjectType -eq "User" -and $_.SignInName -like "*#EXT#*" }
-    foreach ($guest in $guestAssignments) {
-        if ($guest.RoleDefinitionName -in @("Owner", "Contributor", "User Access Administrator")) {
-            $Issues += New-Issue `
-                -Category "Users" `
-                -Severity "High" `
-                -Resource $guest.DisplayName `
-                -Description "Guest user has elevated permissions: $($guest.RoleDefinitionName)" `
-                -Recommendation "Review guest access and limit permissions" `
-                -FixScript {
-                    # Remove-AzRoleAssignment -ObjectId $guest.ObjectId -RoleDefinitionName $guest.RoleDefinitionName -Scope $guest.Scope
-                }
-        }
-    }
-} catch {
-    Write-Log "Limited user analysis due to permissions: $_" "WARNING"
+# Check for guest users with elevated permissions
+$guestAssignments = $roleAssignments | Where-Object { 
+    $_.principalType -eq "User" -and $_.principalName -like "*#EXT#*" 
 }
 
-Write-Log "User analysis complete. Found $($Issues | Where-Object Category -eq 'Users' | Measure-Object).Count issues" "INFO"
+foreach ($guest in $guestAssignments) {
+    if ($guest.roleDefinitionName -in @("Owner", "Contributor", "User Access Administrator")) {
+        $fixCmd = "az role assignment delete --assignee `"$($guest.principalId)`" --role `"$($guest.roleDefinitionName)`" --scope `"$($guest.scope)`""
+        
+        $Issues += New-Issue `
+            -Category "Users" `
+            -Severity "High" `
+            -Resource $guest.principalName `
+            -Description "Guest user has elevated permissions: $($guest.roleDefinitionName)" `
+            -Recommendation "Review guest access and limit permissions" `
+            -FixScript $fixCmd
+    }
+}
+
+Write-Log "User analysis complete. Found $(($Issues | Where-Object {$_.Category -eq 'Users'}).Count) issues" "INFO"
 
 #endregion
 
 #region 5. Resource Configuration Analysis
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
-Write-Host "║  ⚙️  ANALYZING: RESOURCE CONFIGURATIONS                          ║" -ForegroundColor Yellow
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYZING: RESOURCE CONFIGURATIONS"
+Write-Host "=============================================================="
+Write-Host ""
 
 Write-Log "Analyzing resource configurations..." "INFO"
 
 # Check for resources without tags
-$allResources = Get-AzResource
-$untaggedResources = $allResources | Where-Object { $_.Tags.Count -eq 0 }
+$allResourcesJson = az resource list --output json 2>&1
+$allResources = $allResourcesJson | ConvertFrom-Json
+$untaggedResources = $allResources | Where-Object { -not $_.tags -or $_.tags.Count -eq 0 }
 
 if ($untaggedResources.Count -gt 0) {
+    $fixCmd = "# Tag resources using:`n"
+    $fixCmd += "# az tag create --resource-id `"/subscriptions/xxx/resourceGroups/xxx/providers/xxx`" --tags Environment=Production CostCenter=IT"
+    
     $Issues += New-Issue `
         -Category "Governance" `
         -Severity "Low" `
         -Resource "Multiple Resources" `
         -Description "$($untaggedResources.Count) resources without tags" `
         -Recommendation "Implement tagging strategy for cost tracking and management" `
-        -FixScript {
-            # foreach ($resource in $untaggedResources) {
-            #     Set-AzResource -ResourceId $resource.ResourceId -Tag @{"Environment"="Production"; "CostCenter"="IT"} -Force
-            # }
-        }
+        -FixScript $fixCmd
 }
 
 # Check for resources in non-standard locations
-$primaryLocation = ($allResources | Group-Object Location | Sort-Object Count -Descending | Select-Object -First 1).Name
-$resourcesInOtherLocations = $allResources | Where-Object { $_.Location -ne $primaryLocation }
-
-if ($resourcesInOtherLocations.Count -gt 5) {
-    $Issues += New-Issue `
-        -Category "Governance" `
-        -Severity "Low" `
-        -Resource "Multiple Resources" `
-        -Description "$($resourcesInOtherLocations.Count) resources in non-primary locations" `
-        -Recommendation "Consider consolidating resources to reduce latency and costs" `
-        -FixScript {
-            # Requires migration strategy
-        }
+$locationGroups = $allResources | Group-Object location | Sort-Object Count -Descending
+if ($locationGroups.Count -gt 1) {
+    $primaryLocation = $locationGroups[0].Name
+    $resourcesInOtherLocations = $allResources | Where-Object { $_.location -ne $primaryLocation }
+    
+    if ($resourcesInOtherLocations.Count -gt 5) {
+        $Issues += New-Issue `
+            -Category "Governance" `
+            -Severity "Low" `
+            -Resource "Multiple Resources" `
+            -Description "$($resourcesInOtherLocations.Count) resources in non-primary locations" `
+            -Recommendation "Consider consolidating resources to reduce latency and costs" `
+            -FixScript "# Requires migration strategy - review and plan resource consolidation"
+    }
 }
 
-Write-Log "Resource analysis complete. Found $($Issues | Where-Object Category -eq 'Governance' | Measure-Object).Count issues" "INFO"
+Write-Log "Resource analysis complete. Found $(($Issues | Where-Object {$_.Category -eq 'Governance'}).Count) issues" "INFO"
 
 #endregion
 
 #region 6. Generate Reports
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  📊 GENERATING COMPREHENSIVE REPORTS                             ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  GENERATING COMPREHENSIVE REPORTS"
+Write-Host "=============================================================="
+Write-Host ""
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $reportFile = Join-Path $ReportPath "Azure_Analysis_$timestamp.html"
@@ -568,9 +574,9 @@ $htmlReport = @"
 </head>
 <body>
     <div class="header">
-        <h1>🔍 Azure Environment Analysis Report</h1>
+        <h1>Azure Environment Analysis Report</h1>
         <p>Generated: $(Get-Date -Format "MMMM dd, yyyy HH:mm:ss")</p>
-        <p>Subscription: $($context.Subscription.Name)</p>
+        <p>Subscription: $($accountInfo.name)</p>
     </div>
     
     <div class="summary">
@@ -580,19 +586,19 @@ $htmlReport = @"
         </div>
         <div class="summary-card">
             <h3>Critical</h3>
-            <p class="number critical">$(($Issues | Where-Object Severity -eq 'Critical').Count)</p>
+            <p class="number critical">$(($Issues | Where-Object {$_.Severity -eq 'Critical'}).Count)</p>
         </div>
         <div class="summary-card">
             <h3>High</h3>
-            <p class="number high">$(($Issues | Where-Object Severity -eq 'High').Count)</p>
+            <p class="number high">$(($Issues | Where-Object {$_.Severity -eq 'High'}).Count)</p>
         </div>
         <div class="summary-card">
             <h3>Medium</h3>
-            <p class="number medium">$(($Issues | Where-Object Severity -eq 'Medium').Count)</p>
+            <p class="number medium">$(($Issues | Where-Object {$_.Severity -eq 'Medium'}).Count)</p>
         </div>
         <div class="summary-card">
             <h3>Low</h3>
-            <p class="number low">$(($Issues | Where-Object Severity -eq 'Low').Count)</p>
+            <p class="number low">$(($Issues | Where-Object {$_.Severity -eq 'Low'}).Count)</p>
         </div>
     </div>
     
@@ -630,7 +636,7 @@ $htmlReport += @"
     </div>
     
     <div class="footer">
-        <p>Azure Environment Analyzer v2.0 | Execution Time: $((Get-Date) - $startTime)</p>
+        <p>Azure Environment Analyzer v3.0 | Execution Time: $((Get-Date) - $startTime)</p>
         <p>Review the generated fix scripts before execution: $fixScriptFile</p>
     </div>
 </body>
@@ -642,9 +648,6 @@ Write-Log "HTML report saved: $reportFile" "SUCCESS"
 
 # Generate Fix Scripts
 $fixScriptContent = @"
-#Requires -Version 5.1
-#Requires -Modules Az
-
 <#
 .SYNOPSIS
     Auto-generated fix scripts for detected issues
@@ -665,12 +668,19 @@ param(
     [string[]]`$Categories = @("All")
 )
 
-Write-Host "🔧 Azure Environment Fix Script" -ForegroundColor Cyan
-Write-Host "Issues to fix: $($Issues.Count)`n" -ForegroundColor Yellow
+Write-Host "Azure Environment Fix Script" -ForegroundColor Cyan
+Write-Host "Issues to fix: $($Issues.Count)" -ForegroundColor Yellow
+Write-Host ""
 
-# Connect to Azure
-Connect-AzAccount
-Set-AzContext -SubscriptionId "$($context.Subscription.Id)"
+# Login to Azure CLI
+Write-Host "Checking Azure CLI login..." -ForegroundColor Cyan
+az account show
+if (`$LASTEXITCODE -ne 0) {
+    Write-Host "Please login to Azure CLI" -ForegroundColor Red
+    az login
+}
+
+az account set --subscription "$currentSubscriptionId"
 
 "@
 
@@ -681,9 +691,11 @@ foreach ($group in $categoryGroups) {
 
 #region Fix $($group.Name) Issues
 
-Write-Host "`n═══════════════════════════════════════════════════════════" -ForegroundColor Yellow
-Write-Host "  Fixing $($group.Name) Issues ($($group.Count) found)" -ForegroundColor Yellow
-Write-Host "═══════════════════════════════════════════════════════════`n" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  Fixing $($group.Name) Issues ($($group.Count) found)"
+Write-Host "=============================================================="
+Write-Host ""
 
 if (`$Categories -contains "$($group.Name)" -or `$Categories -contains "All") {
 "@
@@ -692,14 +704,14 @@ if (`$Categories -contains "$($group.Name)" -or `$Categories -contains "All") {
     foreach ($issue in $group.Group) {
         $fixScriptContent += @"
 
-    # Issue $issueIndex: $($issue.Description)
-    Write-Host "🔧 Fixing: $($issue.Resource)" -ForegroundColor Cyan
+    # Issue $issueIndex`: $($issue.Description)
+    Write-Host "Fixing: $($issue.Resource)" -ForegroundColor Cyan
     try {
-        # $($issue.FixScript -replace "`n", "`n        # ")
+        $($issue.FixScript)
         
-        Write-Host "   ✅ Fixed: $($issue.Resource)" -ForegroundColor Green
+        Write-Host "   Fixed: $($issue.Resource)" -ForegroundColor Green
     } catch {
-        Write-Host "   ❌ Failed: `$_" -ForegroundColor Red
+        Write-Host "   Failed: `$_" -ForegroundColor Red
     }
     
 "@
@@ -718,8 +730,10 @@ if (`$Categories -contains "$($group.Name)" -or `$Categories -contains "All") {
 
 $fixScriptContent += @"
 
-Write-Host "`n✅ Fix script execution complete!" -ForegroundColor Green
-Write-Host "Review the results above and re-run analysis to verify fixes.`n" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Fix script execution complete!" -ForegroundColor Green
+Write-Host "Review the results above and re-run analysis to verify fixes." -ForegroundColor Cyan
+Write-Host ""
 "@
 
 $fixScriptContent | Out-File -FilePath $fixScriptFile -Encoding UTF8
@@ -732,45 +746,54 @@ Write-Log "Fix scripts saved: $fixScriptFile" "SUCCESS"
 $endTime = Get-Date
 $duration = $endTime - $startTime
 
-Write-Host "`n╔══════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║                                                                  ║" -ForegroundColor Green
-Write-Host "║     ✅ ANALYSIS COMPLETE!                                        ║" -ForegroundColor Green
-Write-Host "║                                                                  ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════════════════════════════╝`n" -ForegroundColor Green
+Write-Host ""
+Write-Host "=============================================================="
+Write-Host "  ANALYSIS COMPLETE!"
+Write-Host "=============================================================="
+Write-Host ""
 
-Write-Host "📊 SUMMARY" -ForegroundColor Cyan
-Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "SUMMARY" -ForegroundColor Cyan
+Write-Host "=============================================================="
 Write-Host "  Total Issues Found:      $($Issues.Count)" -ForegroundColor White
-Write-Host "  ├─ Critical:             $(($Issues | Where-Object Severity -eq 'Critical').Count)" -ForegroundColor Red
-Write-Host "  ├─ High:                 $(($Issues | Where-Object Severity -eq 'High').Count)" -ForegroundColor DarkRed
-Write-Host "  ├─ Medium:               $(($Issues | Where-Object Severity -eq 'Medium').Count)" -ForegroundColor Yellow
-Write-Host "  └─ Low:                  $(($Issues | Where-Object Severity -eq 'Low').Count)" -ForegroundColor Green
+Write-Host "  - Critical:              $(($Issues | Where-Object {$_.Severity -eq 'Critical'}).Count)" -ForegroundColor Red
+Write-Host "  - High:                  $(($Issues | Where-Object {$_.Severity -eq 'High'}).Count)" -ForegroundColor DarkRed
+Write-Host "  - Medium:                $(($Issues | Where-Object {$_.Severity -eq 'Medium'}).Count)" -ForegroundColor Yellow
+Write-Host "  - Low:                   $(($Issues | Where-Object {$_.Severity -eq 'Low'}).Count)" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Execution Time:          $($duration.ToString('mm\:ss'))" -ForegroundColor White
-Write-Host "  Subscription:            $($context.Subscription.Name)" -ForegroundColor White
-Write-Host "═══════════════════════════════════════════════════════════════════`n" -ForegroundColor Cyan
+Write-Host "  Subscription:            $($accountInfo.name)" -ForegroundColor White
+Write-Host "=============================================================="
+Write-Host ""
 
-Write-Host "📂 GENERATED REPORTS" -ForegroundColor Cyan
-Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-Write-Host "  📊 HTML Report:          $reportFile" -ForegroundColor White
-Write-Host "  📋 CSV Export:           $csvFile" -ForegroundColor White
-Write-Host "  🔧 Fix Scripts:          $fixScriptFile" -ForegroundColor White
-Write-Host "═══════════════════════════════════════════════════════════════════`n" -ForegroundColor Cyan
+Write-Host "GENERATED REPORTS" -ForegroundColor Cyan
+Write-Host "=============================================================="
+Write-Host "  HTML Report:             $reportFile" -ForegroundColor White
+Write-Host "  CSV Export:              $csvFile" -ForegroundColor White
+Write-Host "  Fix Scripts:             $fixScriptFile" -ForegroundColor White
+Write-Host "=============================================================="
+Write-Host ""
 
-Write-Host "🚀 NEXT STEPS" -ForegroundColor Yellow
-Write-Host "═══════════════════════════════════════════════════════════════════" -ForegroundColor Yellow
+Write-Host "NEXT STEPS" -ForegroundColor Yellow
+Write-Host "=============================================================="
 Write-Host "  1. Open HTML report:     explorer '$reportFile'" -ForegroundColor White
 Write-Host "  2. Review CSV details:   Import-Csv '$csvFile'" -ForegroundColor White
 Write-Host "  3. Review fix scripts:   code '$fixScriptFile'" -ForegroundColor White
 Write-Host "  4. Apply fixes:          .\$([System.IO.Path]::GetFileName($fixScriptFile)) -Categories RBAC,Network" -ForegroundColor White
-Write-Host "═══════════════════════════════════════════════════════════════════`n" -ForegroundColor Yellow
+Write-Host "=============================================================="
+Write-Host ""
 
 if ($Issues.Count -gt 0) {
-    Write-Host "⚠️  WARNING: Review all issues before applying fixes!" -ForegroundColor Red
-    Write-Host "   Always test fixes in a non-production environment first.`n" -ForegroundColor Red
+    Write-Host "WARNING: Review all issues before applying fixes!" -ForegroundColor Red
+    Write-Host "Always test fixes in a non-production environment first." -ForegroundColor Red
+    Write-Host ""
 }
 
-# Open HTML report
-Start-Process $reportFile
+# Open HTML report if possible
+try {
+    Start-Process $reportFile
+}
+catch {
+    Write-Log "Could not auto-open report. Please open manually: $reportFile" "WARNING"
+}
 
 #endregion
