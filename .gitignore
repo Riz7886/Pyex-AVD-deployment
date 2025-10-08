@@ -1,0 +1,4 @@
+﻿Configuration/*.json
+Audit-Reports/*.csv
+Audit-Reports/*.html
+*.log

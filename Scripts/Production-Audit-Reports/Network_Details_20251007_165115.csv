@@ -1,0 +1,3 @@
+"SubscriptionName","VNetName","SubnetName","AddressPrefix","ResourceGroup","Location","ConnectedResources"
+"Pay-As-You-Go","pyex-vnet-avd-prod-eus","pyex-snet-avd-hosts-prod","10.100.1.0/24","pyex-rg-avd-network-prod-eus-1191","eastus","2"
+"Pay-As-You-Go","vnet-pyexhealth-avd","snet-avd-hosts","10.100.1.0/24","rg-pyexhealth-avd-network-5437","eastus","0"

@@ -1,0 +1,7 @@
+DEPLOYMENT COMPLETE
+VM Size: Standard_D4s_v4 ⭐⭐⭐⭐
+VMs: 2 deployed
+Users: 12
+Cost: $456/month
+RG: pyex-rg-avd-core-prod-eus-1191
+Credentials: Configuration\admin-credentials-1191.json

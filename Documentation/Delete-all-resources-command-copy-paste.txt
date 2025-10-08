@@ -1,0 +1,11 @@
+# DELETE ALL FAILED RESOURCES NOW
+Remove-AzResourceGroup -Name "pyex-rg-avd-core-prod-eus-5711" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-network-prod-eus-5711" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-hosts-prod-eus-5711" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-storage-prod-eus-5711" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-core-prod-eus-4403" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-network-prod-eus-4403" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-hosts-prod-eus-4403" -Force -AsJob
+Remove-AzResourceGroup -Name "pyex-rg-avd-storage-prod-eus-4403" -Force -AsJob
+
+Write-Host "✓ Deleting all failed deployments to STOP COSTS" -ForegroundColor Green
