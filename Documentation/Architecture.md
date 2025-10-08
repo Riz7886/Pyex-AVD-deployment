@@ -1,4 +1,4 @@
-﻿# Azure Virtual Desktop - PYEX Health
+﻿# Azure Virtual Desktop -  Health
 ## Complete Architecture & Cost Analysis
 
 ### Deployment Summary
