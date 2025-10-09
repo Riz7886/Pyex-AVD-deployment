@@ -2,25 +2,13 @@
 
 <#
 .SYNOPSIS
-    Ultimate Multi-Subscription Azure Audit - FIXED VERSION
+    Ultimate Multi-Subscription Azure Audit - FIXED Statistics
 
 .DESCRIPTION
-    Enterprise-grade READ-ONLY audit script
-    - Automatically discovers ALL subscriptions
-    - Analyzes every resource in every subscription
-    - Generates comprehensive reports per subscription
-    - 100% READ-ONLY - Makes ZERO changes
-    - FIXED: All JSON parsing errors resolved
-
-.PARAMETER OutputPath
-    Path where reports will be saved. Default: .\Complete-Audit-Reports\
-
+    Enterprise-grade READ-ONLY audit - FIXED statistics calculation
+    
 .EXAMPLE
     .\Ultimate-Multi-Subscription-Audit.ps1
-
-.NOTES
-    Version: 5.1 - FIXED Edition
-    100% READ-ONLY - Safe for production
 #>
 
 [CmdletBinding()]
@@ -55,9 +43,7 @@ function Get-SafeValue {
 }
 
 function Get-AzureJsonData {
-    param(
-        [string]$Command
-    )
+    param([string]$Command)
     
     try {
         $output = Invoke-Expression $Command
@@ -168,7 +154,6 @@ foreach ($subscription in $allSubscriptions) {
         Networking = @()
         KeyVaults = @()
         LoadBalancers = @()
-        FrontDoors = @()
         ServicePrincipals = @()
         Findings = @()
         Statistics = @{
@@ -502,16 +487,17 @@ Write-Host ""
 
 Write-AuditLog "Generating master reports..." "PROGRESS"
 
+# FIXED: Calculate totals correctly without Measure-Object nested properties
 $totalStats = @{
     TotalSubscriptions = $subscriptionReports.Count
-    TotalResourceGroups = ($subscriptionReports | Measure-Object -Property {$_.Statistics.TotalResourceGroups} -Sum).Sum
-    TotalResources = ($subscriptionReports | Measure-Object -Property {$_.Statistics.TotalResources} -Sum).Sum
-    TotalIAMAssignments = ($subscriptionReports | Measure-Object -Property {$_.Statistics.TotalIAMAssignments} -Sum).Sum
+    TotalResourceGroups = ($subscriptionReports | ForEach-Object { $_.Statistics.TotalResourceGroups } | Measure-Object -Sum).Sum
+    TotalResources = ($subscriptionReports | ForEach-Object { $_.Statistics.TotalResources } | Measure-Object -Sum).Sum
+    TotalIAMAssignments = ($subscriptionReports | ForEach-Object { $_.Statistics.TotalIAMAssignments } | Measure-Object -Sum).Sum
     TotalFindings = ($subscriptionReports | ForEach-Object { $_.Findings.Count } | Measure-Object -Sum).Sum
-    CriticalFindings = ($subscriptionReports | Measure-Object -Property {$_.Statistics.CriticalFindings} -Sum).Sum
-    HighFindings = ($subscriptionReports | Measure-Object -Property {$_.Statistics.HighFindings} -Sum).Sum
-    MediumFindings = ($subscriptionReports | Measure-Object -Property {$_.Statistics.MediumFindings} -Sum).Sum
-    LowFindings = ($subscriptionReports | Measure-Object -Property {$_.Statistics.LowFindings} -Sum).Sum
+    CriticalFindings = ($subscriptionReports | ForEach-Object { $_.Statistics.CriticalFindings } | Measure-Object -Sum).Sum
+    HighFindings = ($subscriptionReports | ForEach-Object { $_.Statistics.HighFindings } | Measure-Object -Sum).Sum
+    MediumFindings = ($subscriptionReports | ForEach-Object { $_.Statistics.MediumFindings } | Measure-Object -Sum).Sum
+    LowFindings = ($subscriptionReports | ForEach-Object { $_.Statistics.LowFindings } | Measure-Object -Sum).Sum
 }
 
 foreach ($subReport in $subscriptionReports) {
@@ -590,20 +576,11 @@ Generated: $(Get-Date -Format "MMMM dd, yyyy HH:mm:ss")
 
 ## Per-Subscription Reports
 
-Each subscription has detailed exports in its own folder with CSV files for:
-- Resources
-- IAM assignments
-- Security findings
-- Azure policies
-- Network configuration
-- Key Vaults
-- Load Balancers
-- Service Principals
+Each subscription has detailed exports in its own folder.
 
 ---
 
-**READ-ONLY Audit** - No changes were made to your environment
-**Safe for Production** - All operations were read-only
+**READ-ONLY Audit** - No changes made to environment
 "@
 
 $readmeContent | Out-File -FilePath $readmePath -Encoding UTF8
