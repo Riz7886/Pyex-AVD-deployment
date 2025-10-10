@@ -1,16 +1,6 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
-<#
-.SYNOPSIS
-    Deploy PYEX Bastion VM - Auto Git Cleanup
-.DESCRIPTION
-    Creates VM, clones scripts, removes ALL Git traces
-.EXAMPLE
-    $pw = ConvertTo-SecureString "Pass123!" -AsPlainText -Force
-    .\Deploy-Bastion-VM.ps1 -ResourceGroupName "RG-Bastion" -Location "eastus" -VMName "Bastion-VM" -AdminUsername "admin" -AdminPassword $pw
-#>
-
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$ResourceGroupName,
@@ -31,9 +21,7 @@ function Write-Log {
 }
 
 Write-Host ""
-Write-Host "============================================"
-Write-Host "  BASTION VM DEPLOYMENT WITH GIT CLEANUP"
-Write-Host "============================================"
+Write-Host "BASTION VM - 100% AUTOMATED DEPLOYMENT"
 Write-Host ""
 
 Write-Log "Checking Azure CLI"
@@ -52,13 +40,13 @@ if ((az group exists --name $ResourceGroupName) -eq "false") {
     az group create --name $ResourceGroupName --location $Location --output none
     Write-Log "Created" "SUCCESS"
 } else {
-    Write-Log "Already exists" "WARNING"
+    Write-Log "Exists" "WARNING"
 }
 
 Write-Host ""
 Write-Host "STEP 2: Virtual Network" -ForegroundColor Yellow
 az network vnet create --resource-group $ResourceGroupName --name "VNet-Bastion" --address-prefix 10.0.0.0/16 --subnet-name "Subnet-Bastion" --subnet-prefix 10.0.1.0/24 --location $Location --output none
-Write-Log "VNet created" "SUCCESS"
+Write-Log "Created" "SUCCESS"
 
 Write-Host ""
 Write-Host "STEP 3: Network Security Group" -ForegroundColor Yellow
@@ -66,33 +54,32 @@ az network nsg create --resource-group $ResourceGroupName --name "NSG-Bastion" -
 az network nsg rule create --resource-group $ResourceGroupName --nsg-name "NSG-Bastion" --name "AllowRDP" --priority 100 --destination-port-ranges 3389 --access Allow --protocol Tcp --output none
 az network nsg rule create --resource-group $ResourceGroupName --nsg-name "NSG-Bastion" --name "AllowHTTPS" --priority 110 --destination-port-ranges 443 --access Allow --protocol Tcp --output none
 az network vnet subnet update --resource-group $ResourceGroupName --vnet-name "VNet-Bastion" --name "Subnet-Bastion" --network-security-group "NSG-Bastion" --output none
-Write-Log "NSG configured" "SUCCESS"
+Write-Log "Configured" "SUCCESS"
 
 Write-Host ""
 Write-Host "STEP 4: Service Principal" -ForegroundColor Yellow
 $spExists = az ad sp list --display-name $ServicePrincipalName --output json | ConvertFrom-Json
 if ($spExists.Count -gt 0) {
     $spAppId = $spExists[0].appId
-    Write-Log "Already exists" "WARNING"
+    Write-Log "Exists" "WARNING"
 } else {
     $sp = az ad sp create-for-rbac --name $ServicePrincipalName --output json | ConvertFrom-Json
     $spAppId = $sp.appId
     Write-Host "App ID: $spAppId" -ForegroundColor Green
     Write-Host "Password: $($sp.password)" -ForegroundColor Green
-    Write-Host "SAVE THESE!" -ForegroundColor Yellow
     Start-Sleep -Seconds 20
 }
 
 foreach ($sub in $subscriptions) {
     az role assignment create --assignee $spAppId --role "Reader" --scope "/subscriptions/$($sub.id)" --output none 2>$null
 }
-Write-Log "Reader access to all subscriptions" "SUCCESS"
+Write-Log "Reader access granted" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 5: Create VM (5-10 minutes)" -ForegroundColor Yellow
+Write-Host "STEP 5: Create VM" -ForegroundColor Yellow
 $plainPw = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AdminPassword))
 az vm create --resource-group $ResourceGroupName --name $VMName --image "Win2022Datacenter" --size $VMSize --admin-username $AdminUsername --admin-password $plainPw --vnet-name "VNet-Bastion" --subnet "Subnet-Bastion" --nsg "NSG-Bastion" --public-ip-sku Standard --location $Location --output none
-Write-Log "VM created" "SUCCESS"
+Write-Log "Created" "SUCCESS"
 
 Write-Host ""
 Write-Host "STEP 6: Install Azure CLI" -ForegroundColor Yellow
@@ -105,29 +92,32 @@ az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --co
 Write-Log "Created" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 8: Clone GitHub Repo" -ForegroundColor Yellow
+Write-Host "STEP 8: Clone GitHub" -ForegroundColor Yellow
 $gitCmd = "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe -OutFile C:\Git.exe; Start-Process C:\Git.exe -ArgumentList '/VERYSILENT' -Wait; Remove-Item C:\Git.exe; & 'C:\Program Files\Git\bin\git.exe' clone https://github.com/Riz7886/Pyex-AVD-deployment.git C:\PYEX-Automation\Scripts"
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $gitCmd --output none 2>$null
 Write-Log "Cloned" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 9: DELETE ALL GIT TRACES" -ForegroundColor Yellow
-$cleanup = "Remove-Item 'C:\PYEX-Automation\Scripts\.git' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\PYEX-Automation\Scripts\.gitignore' -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\PYEX-Automation\Scripts\.gitattributes' -Force -ErrorAction SilentlyContinue; if (Test-Path 'C:\Program Files\Git\unins000.exe') { Start-Process 'C:\Program Files\Git\unins000.exe' -ArgumentList '/VERYSILENT' -Wait }; Remove-Item 'C:\Program Files\Git' -Recurse -Force -ErrorAction SilentlyContinue; 'Git removed' | Out-File 'C:\PYEX-Automation\Logs\cleanup.log'"
+Write-Host "STEP 9: Delete Git" -ForegroundColor Yellow
+$cleanup = "Remove-Item 'C:\PYEX-Automation\Scripts\.git' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\PYEX-Automation\Scripts\.gitignore' -Force -ErrorAction SilentlyContinue; if (Test-Path 'C:\Program Files\Git\unins000.exe') { Start-Process 'C:\Program Files\Git\unins000.exe' -ArgumentList '/VERYSILENT' -Wait }; Remove-Item 'C:\Program Files\Git' -Recurse -Force -ErrorAction SilentlyContinue"
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $cleanup --output none 2>$null
-Write-Log "Git REMOVED - No traces left" "SUCCESS"
+Write-Log "Removed" "SUCCESS"
+
+Write-Host ""
+Write-Host "STEP 10: Setup Task Schedulers" -ForegroundColor Yellow
+$tasks = "schtasks /Create /TN 'PYEX-Azure-Monitor' /TR 'powershell.exe -File C:\PYEX-Automation\Scripts\Azure-Monitor-Multi-Sub.ps1' /SC WEEKLY /D MON,THU /ST 08:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Cost-Optimization' /TR 'powershell.exe -File C:\PYEX-Automation\Scripts\Cost-Optimization-Multi-Sub.ps1' /SC WEEKLY /D MON,THU /ST 09:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Security-Audit' /TR 'powershell.exe -File C:\PYEX-Automation\Scripts\Ultimate-Multi-Subscription-Audit.ps1' /SC WEEKLY /D TUE,FRI /ST 08:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-AD-Security' /TR 'powershell.exe -File C:\PYEX-Automation\Scripts\AD-Security-Audit-Multi-Sub.ps1' /SC WEEKLY /D TUE,FRI /ST 09:00 /RU SYSTEM /F"
+az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $tasks --output none 2>$null
+Write-Log "4 Tasks Created" "SUCCESS"
 
 $vmInfo = az vm show --resource-group $ResourceGroupName --name $VMName --show-details --output json | ConvertFrom-Json
 
 Write-Host ""
-Write-Host "============================================" -ForegroundColor Green
-Write-Host "  COMPLETE - GIT REMOVED" -ForegroundColor Green
-Write-Host "============================================" -ForegroundColor Green
+Write-Host "COMPLETE - 100% AUTOMATED" -ForegroundColor Green
 Write-Host ""
 Write-Host "VM IP: $($vmInfo.publicIps)" -ForegroundColor White
 Write-Host "Username: $AdminUsername" -ForegroundColor White
 Write-Host ""
-Write-Host "Scripts at: C:\PYEX-Automation\Scripts" -ForegroundColor Green
-Write-Host "NO Git info visible to client" -ForegroundColor Green
-Write-Host ""
-Write-Host "RDP: mstsc /v:$($vmInfo.publicIps)" -ForegroundColor Cyan
+Write-Host "Tasks: 4 scheduled (Mon/Thu and Tue/Fri)" -ForegroundColor Green
+Write-Host "Scripts: C:\PYEX-Automation\Scripts" -ForegroundColor White
+Write-Host "Git: Removed" -ForegroundColor Green
 Write-Host ""
