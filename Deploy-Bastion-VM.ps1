@@ -3,19 +3,9 @@
 
 <#
 .SYNOPSIS
-    Deploy PYEX Bastion VM - Fully Automated
+    Deploy PYEX Bastion VM - Auto Git Cleanup
 .DESCRIPTION
-    Creates Bastion VM with complete automation including Service Principal and GitHub clone
-.PARAMETER ResourceGroupName
-    Resource group name
-.PARAMETER Location
-    Azure region
-.PARAMETER VMName
-    VM name
-.PARAMETER AdminUsername
-    Admin username
-.PARAMETER AdminPassword
-    Admin password (secure string)
+    Creates VM, clones scripts, removes ALL Git traces
 .EXAMPLE
     $pw = ConvertTo-SecureString "Pass123!" -AsPlainText -Force
     .\Deploy-Bastion-VM.ps1 -ResourceGroupName "RG-Bastion" -Location "eastus" -VMName "Bastion-VM" -AdminUsername "admin" -AdminPassword $pw
@@ -42,7 +32,7 @@ function Write-Log {
 
 Write-Host ""
 Write-Host "============================================"
-Write-Host "  BASTION VM DEPLOYMENT"
+Write-Host "  BASTION VM DEPLOYMENT WITH GIT CLEANUP"
 Write-Host "============================================"
 Write-Host ""
 
@@ -96,7 +86,7 @@ if ($spExists.Count -gt 0) {
 foreach ($sub in $subscriptions) {
     az role assignment create --assignee $spAppId --role "Reader" --scope "/subscriptions/$($sub.id)" --output none 2>$null
 }
-Write-Log "Reader access granted to all subscriptions" "SUCCESS"
+Write-Log "Reader access to all subscriptions" "SUCCESS"
 
 Write-Host ""
 Write-Host "STEP 5: Create VM (5-10 minutes)" -ForegroundColor Yellow
@@ -105,31 +95,39 @@ az vm create --resource-group $ResourceGroupName --name $VMName --image "Win2022
 Write-Log "VM created" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 6: Install Azure CLI on VM" -ForegroundColor Yellow
+Write-Host "STEP 6: Install Azure CLI" -ForegroundColor Yellow
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts "Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile C:\AzureCLI.msi; Start-Process msiexec.exe -ArgumentList '/I','C:\AzureCLI.msi','/quiet' -Wait; Remove-Item C:\AzureCLI.msi" --output none 2>$null
-Write-Log "Azure CLI installed" "SUCCESS"
+Write-Log "Installed" "SUCCESS"
 
 Write-Host ""
 Write-Host "STEP 7: Setup Directories" -ForegroundColor Yellow
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts "New-Item -Path 'C:\PYEX-Automation\Scripts','C:\PYEX-Automation\Reports','C:\PYEX-Automation\Logs' -ItemType Directory -Force; Set-ExecutionPolicy RemoteSigned -Force" --output none 2>$null
-Write-Log "Directories created" "SUCCESS"
+Write-Log "Created" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 8: Install Git and Clone Repo" -ForegroundColor Yellow
+Write-Host "STEP 8: Clone GitHub Repo" -ForegroundColor Yellow
 $gitCmd = "Invoke-WebRequest -Uri https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe -OutFile C:\Git.exe; Start-Process C:\Git.exe -ArgumentList '/VERYSILENT' -Wait; Remove-Item C:\Git.exe; & 'C:\Program Files\Git\bin\git.exe' clone https://github.com/Riz7886/Pyex-AVD-deployment.git C:\PYEX-Automation\Scripts"
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $gitCmd --output none 2>$null
-Write-Log "GitHub repo cloned" "SUCCESS"
+Write-Log "Cloned" "SUCCESS"
+
+Write-Host ""
+Write-Host "STEP 9: DELETE ALL GIT TRACES" -ForegroundColor Yellow
+$cleanup = "Remove-Item 'C:\PYEX-Automation\Scripts\.git' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\PYEX-Automation\Scripts\.gitignore' -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\PYEX-Automation\Scripts\.gitattributes' -Force -ErrorAction SilentlyContinue; if (Test-Path 'C:\Program Files\Git\unins000.exe') { Start-Process 'C:\Program Files\Git\unins000.exe' -ArgumentList '/VERYSILENT' -Wait }; Remove-Item 'C:\Program Files\Git' -Recurse -Force -ErrorAction SilentlyContinue; 'Git removed' | Out-File 'C:\PYEX-Automation\Logs\cleanup.log'"
+az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $cleanup --output none 2>$null
+Write-Log "Git REMOVED - No traces left" "SUCCESS"
 
 $vmInfo = az vm show --resource-group $ResourceGroupName --name $VMName --show-details --output json | ConvertFrom-Json
+
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  DEPLOYMENT COMPLETE" -ForegroundColor Green
+Write-Host "  COMPLETE - GIT REMOVED" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "VM IP: $($vmInfo.publicIps)" -ForegroundColor White
 Write-Host "Username: $AdminUsername" -ForegroundColor White
-Write-Host "Scripts: C:\PYEX-Automation\Scripts" -ForegroundColor White
+Write-Host ""
+Write-Host "Scripts at: C:\PYEX-Automation\Scripts" -ForegroundColor Green
+Write-Host "NO Git info visible to client" -ForegroundColor Green
 Write-Host ""
 Write-Host "RDP: mstsc /v:$($vmInfo.publicIps)" -ForegroundColor Cyan
-Write-Host "Then run: .\MASTER-Install-All-Scheduled-Tasks.ps1" -ForegroundColor Cyan
 Write-Host ""
