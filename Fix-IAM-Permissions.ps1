@@ -2,19 +2,14 @@
 
 <#
 .SYNOPSIS
-    Fix IAM Permission Issues - Fixes excessive permissions found by IAM audits
-
+    Fix IAM Permission Issues
 .DESCRIPTION
     Reads IAM audit reports and removes excessive permissions
-    
     READ-ONLY BY DEFAULT - Use -Execute to make changes
-    
 .PARAMETER ReportPath
     Path to IAM audit report CSV
-    
 .PARAMETER Execute
-    Actually remove permissions (prompts for each)
-    
+    Actually remove permissions
 .EXAMPLE
     .\Fix-IAM-Permissions.ps1 -ReportPath ".\Reports\IAM-Issues.csv" -Execute
 #>
@@ -23,7 +18,6 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReportPath,
-    
     [Parameter(Mandatory = $false)]
     [switch]$Execute
 )
@@ -34,9 +28,11 @@ function Write-FixLog {
     Write-Host "[$([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))] [$Level] $Message" -ForegroundColor $colors[$Level]
 }
 
-Write-Host "`n================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  FIX IAM PERMISSIONS" -ForegroundColor Cyan
-Write-Host "================================================================`n" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
 
 if (-not (Test-Path $ReportPath)) {
     Write-FixLog "Report not found: $ReportPath" "ERROR"
@@ -48,14 +44,17 @@ $permissions = Import-Csv -Path $ReportPath
 Write-FixLog "Found $($permissions.Count) permission issues" "INFO"
 
 if (-not $Execute) {
-    Write-Host "`n⚠️  READ-ONLY MODE" -ForegroundColor Yellow
-    Write-Host "Use -Execute to remove permissions`n" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "READ-ONLY MODE" -ForegroundColor Yellow
+    Write-Host "Use -Execute to remove permissions" -ForegroundColor Yellow
+    Write-Host ""
 }
 
 $removed = 0
 
 foreach ($perm in $permissions) {
-    Write-Host "`n----------------------------------------" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "----------------------------------------" -ForegroundColor Gray
     Write-Host "User: $($perm.User)" -ForegroundColor White
     Write-Host "Role: $($perm.Role)" -ForegroundColor Yellow
     Write-Host "Scope: $($perm.Scope)" -ForegroundColor Gray
@@ -66,7 +65,7 @@ foreach ($perm in $permissions) {
         continue
     }
     
-    $confirm = Read-Host "`nRemove this permission? (yes/no)"
+    $confirm = Read-Host "Remove this permission? (yes/no)"
     if ($confirm -ne "yes") {
         continue
     }
@@ -81,8 +80,10 @@ foreach ($perm in $permissions) {
     }
 }
 
-Write-Host "`n================================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Green
 Write-Host "Permissions Removed: $removed" -ForegroundColor White
 if (-not $Execute) {
-    Write-Host "⚠️  NO CHANGES MADE" -ForegroundColor Yellow
+    Write-Host "NO CHANGES MADE" -ForegroundColor Yellow
 }
+Write-Host ""

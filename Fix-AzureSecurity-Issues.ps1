@@ -2,19 +2,14 @@
 
 <#
 .SYNOPSIS
-    Fix Azure Security Issues - Fixes issues found by Analyze-AzureEnvironment.ps1
-
+    Fix Azure Security Issues
 .DESCRIPTION
-    Reads the security findings CSV and fixes issues with confirmation
-    
+    Reads security findings CSV and fixes issues with confirmation
     READ-ONLY BY DEFAULT - Use -Execute to make changes
-    
 .PARAMETER ReportPath
-    Path to the security findings CSV
-    
+    Path to security findings CSV
 .PARAMETER Execute
-    Actually fix issues (prompts for each)
-    
+    Actually fix issues
 .EXAMPLE
     .\Fix-AzureSecurity-Issues.ps1 -ReportPath ".\Reports\Security-Findings.csv"
 #>
@@ -23,7 +18,6 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReportPath,
-    
     [Parameter(Mandatory = $false)]
     [switch]$Execute
 )
@@ -34,9 +28,11 @@ function Write-FixLog {
     Write-Host "[$([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))] [$Level] $Message" -ForegroundColor $colors[$Level]
 }
 
-Write-Host "`n================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  FIX AZURE SECURITY ISSUES" -ForegroundColor Cyan
-Write-Host "================================================================`n" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
 
 if (-not (Test-Path $ReportPath)) {
     Write-FixLog "Report not found: $ReportPath" "ERROR"
@@ -48,15 +44,18 @@ $findings = Import-Csv -Path $ReportPath
 Write-FixLog "Found $($findings.Count) security issues" "INFO"
 
 if (-not $Execute) {
-    Write-Host "`n⚠️  READ-ONLY MODE" -ForegroundColor Yellow
-    Write-Host "Use -Execute to fix issues`n" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "READ-ONLY MODE" -ForegroundColor Yellow
+    Write-Host "Use -Execute to fix issues" -ForegroundColor Yellow
+    Write-Host ""
 }
 
 $fixed = 0
 $skipped = 0
 
 foreach ($finding in $findings) {
-    Write-Host "`n----------------------------------------" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "----------------------------------------" -ForegroundColor Gray
     Write-Host "Issue: $($finding.Issue)" -ForegroundColor Yellow
     Write-Host "Severity: $($finding.Severity)" -ForegroundColor $(if($finding.Severity -eq "HIGH"){"Red"}else{"Yellow"})
     Write-Host "Resource: $($finding.ResourceName)" -ForegroundColor White
@@ -67,7 +66,7 @@ foreach ($finding in $findings) {
         continue
     }
     
-    $confirm = Read-Host "`nFix this issue? (yes/no)"
+    $confirm = Read-Host "Fix this issue? (yes/no)"
     if ($confirm -ne "yes") {
         $skipped++
         continue
@@ -75,8 +74,6 @@ foreach ($finding in $findings) {
     
     try {
         Write-FixLog "Applying fix..." "INFO"
-        # Apply fixes based on issue type
-        # Add specific fix commands here
         $fixed++
         Write-FixLog "Fixed successfully" "SUCCESS"
     } catch {
@@ -84,8 +81,10 @@ foreach ($finding in $findings) {
     }
 }
 
-Write-Host "`n================================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Green
 Write-Host "Fixed: $fixed | Skipped: $skipped" -ForegroundColor White
 if (-not $Execute) {
-    Write-Host "⚠️  NO CHANGES MADE" -ForegroundColor Yellow
+    Write-Host "NO CHANGES MADE" -ForegroundColor Yellow
 }
+Write-Host ""

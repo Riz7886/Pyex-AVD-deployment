@@ -2,40 +2,28 @@
 
 <#
 .SYNOPSIS
-    Fix Idle Resources - Deletes idle resources found by Cost-Optimization-Idle-Resources.ps1
-
+    Fix Idle Resources - Deletes idle resources found by Cost-Optimization script
 .DESCRIPTION
-    Reads the CSV report from Cost-Optimization-Idle-Resources.ps1
-    and deletes idle resources with confirmation
-    
+    Reads CSV report and deletes idle resources with confirmation
     READ-ONLY BY DEFAULT - Use -Execute to make changes
-    
 .PARAMETER ReportPath
     Path to the All-Idle-Resources.csv report
-    
 .PARAMETER Execute
     Actually delete resources (prompts for each)
-    
 .PARAMETER Force
     Skip confirmation prompts
-    
 .EXAMPLE
     .\Fix-Idle-Resources.ps1 -ReportPath ".\Reports\All-Idle-Resources.csv"
-    (Read-only - shows what would be deleted)
-    
 .EXAMPLE
     .\Fix-Idle-Resources.ps1 -ReportPath ".\Reports\All-Idle-Resources.csv" -Execute
-    (Prompts for each deletion)
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReportPath,
-    
     [Parameter(Mandatory = $false)]
     [switch]$Execute,
-    
     [Parameter(Mandatory = $false)]
     [switch]$Force
 )
@@ -47,9 +35,11 @@ function Write-FixLog {
     Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $colors[$Level]
 }
 
-Write-Host "`n================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  FIX IDLE RESOURCES" -ForegroundColor Cyan
-Write-Host "================================================================`n" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
 
 if (-not (Test-Path $ReportPath)) {
     Write-FixLog "Report file not found: $ReportPath" "ERROR"
@@ -61,8 +51,10 @@ $idleResources = Import-Csv -Path $ReportPath
 Write-FixLog "Found $($idleResources.Count) idle resources in report" "INFO"
 
 if (-not $Execute) {
-    Write-Host "`n⚠️  READ-ONLY MODE" -ForegroundColor Yellow
-    Write-Host "This is a preview. Use -Execute to actually delete resources`n" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "READ-ONLY MODE" -ForegroundColor Yellow
+    Write-Host "This is a preview. Use -Execute to actually delete resources" -ForegroundColor Yellow
+    Write-Host ""
 }
 
 $deleted = 0
@@ -70,12 +62,13 @@ $failed = 0
 $skipped = 0
 
 foreach ($resource in $idleResources) {
-    Write-Host "`n----------------------------------------" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "----------------------------------------" -ForegroundColor Gray
     Write-Host "Resource: $($resource.ResourceName)" -ForegroundColor White
     Write-Host "Type: $($resource.ResourceType)" -ForegroundColor Gray
     Write-Host "Subscription: $($resource.Subscription)" -ForegroundColor Gray
     Write-Host "Resource Group: $($resource.ResourceGroup)" -ForegroundColor Gray
-    Write-Host "Monthly Cost: `$$($resource.EstimatedMonthlyCost)" -ForegroundColor Yellow
+    Write-Host "Monthly Cost: $($resource.EstimatedMonthlyCost)" -ForegroundColor Yellow
     Write-Host "Reason: $($resource.Status)" -ForegroundColor Gray
     
     if (-not $Execute) {
@@ -84,7 +77,7 @@ foreach ($resource in $idleResources) {
     }
     
     if (-not $Force) {
-        $confirm = Read-Host "`nDelete this resource? (yes/no/skip-all)"
+        $confirm = Read-Host "Delete this resource? (yes/no/skip-all)"
         if ($confirm -eq "skip-all") {
             Write-FixLog "Skipping remaining resources" "WARNING"
             break
@@ -97,8 +90,6 @@ foreach ($resource in $idleResources) {
     }
     
     try {
-        $resourceId = "/subscriptions/$($resource.Subscription)/resourceGroups/$($resource.ResourceGroup)"
-        
         switch ($resource.ResourceType) {
             "VM (Stopped)" {
                 $vmName = $resource.ResourceName
@@ -144,7 +135,8 @@ foreach ($resource in $idleResources) {
     }
 }
 
-Write-Host "`n================================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  SUMMARY" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "Total Resources: $($idleResources.Count)" -ForegroundColor White
@@ -153,6 +145,8 @@ Write-Host "Failed: $failed" -ForegroundColor Red
 Write-Host "Skipped: $skipped" -ForegroundColor Yellow
 
 if (-not $Execute) {
-    Write-Host "`n⚠️  NO CHANGES MADE (Read-only mode)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "NO CHANGES MADE (Read-only mode)" -ForegroundColor Yellow
     Write-Host "Run with -Execute to actually delete resources" -ForegroundColor Yellow
 }
+Write-Host ""
