@@ -43,7 +43,6 @@ Write-Host "`n================================================================" 
 Write-Host "  ULTIMATE AZURE MONITOR - ALL RESOURCE TYPES" -ForegroundColor Magenta
 Write-Host "  Comprehensive Monitoring Across 15 Subscriptions" -ForegroundColor Magenta
 Write-Host "================================================================`n" -ForegroundColor Magenta
-
 if ($Mode -eq "preview") {
     Write-Host "PREVIEW MODE - No alerts will be created`n" -ForegroundColor Yellow
 }
@@ -66,12 +65,6 @@ if ($subscriptions.Count -eq 0) {
 }
 
 Write-Host "Found $($subscriptions.Count) subscriptions`n" -ForegroundColor Green
-
-$script:alertsCreated = 0
-$script:resourcesFound = 0
-$script:actionGroupId = ""
-
-function New-ActionGroup {
     param([string]$ResourceGroup)
     
     $agName = "AG-PYEX-Leadership"
@@ -104,12 +97,12 @@ function New-Alert {
         try {
             az monitor metrics alert create --name $Name --resource-group $RG --scopes $Scope --condition "avg '$Metric' $Op $Val" --description $Desc --evaluation-frequency 5m --window-size 15m --severity $Sev --action $script:actionGroupId 2>$null | Out-Null
             $script:alertsCreated++
-            Write-Host "    ✅ $Desc" -ForegroundColor Green
+            Write-Host "    [OK] $Desc" -ForegroundColor Green
         } catch {
-            Write-Host "    ⚠️  $Name" -ForegroundColor Yellow
+            Write-Host "    [SKIP] $Name" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "    📊 $Desc" -ForegroundColor Yellow
+        Write-Host "    [PREVIEW] $Desc" -ForegroundColor Yellow
     }
 }
 
@@ -262,13 +255,13 @@ if ($Mode -eq "deploy") {
 
 Write-Host "`n================================================================" -ForegroundColor Cyan
 Write-Host "MONITORING COVERAGE:" -ForegroundColor Cyan
-Write-Host "  ✅ VMs: CPU, Memory, Disk, Network" -ForegroundColor Green
-Write-Host "  ✅ App Services: CPU, Memory, Response, Errors" -ForegroundColor Green
-Write-Host "  ✅ SQL: DTU, Storage, Deadlocks" -ForegroundColor Green
-Write-Host "  ✅ Storage: Availability, Latency, Capacity" -ForegroundColor Green
-Write-Host "  ✅ Load Balancers: Health, SNAT exhaustion" -ForegroundColor Green
-Write-Host "  ✅ App Gateways: Unhealthy backends, Response time" -ForegroundColor Green
-Write-Host "  ✅ Function Apps: Execution failures" -ForegroundColor Green
-Write-Host "  ✅ Key Vaults: Availability, API latency" -ForegroundColor Green
-Write-Host "  ✅ AKS: Node CPU, Node Memory" -ForegroundColor Green
+Write-Host "  [OK] VMs: CPU, Memory, Disk, Network" -ForegroundColor Green
+Write-Host "  [OK] App Services: CPU, Memory, Response, Errors" -ForegroundColor Green
+Write-Host "  [OK] SQL: DTU, Storage, Deadlocks" -ForegroundColor Green
+Write-Host "  [OK] Storage: Availability, Latency, Capacity" -ForegroundColor Green
+Write-Host "  [OK] Load Balancers: Health, SNAT exhaustion" -ForegroundColor Green
+Write-Host "  [OK] App Gateways: Unhealthy backends, Response time" -ForegroundColor Green
+Write-Host "  [OK] Function Apps: Execution failures" -ForegroundColor Green
+Write-Host "  [OK] Key Vaults: Availability, API latency" -ForegroundColor Green
+Write-Host "  [OK] AKS: Node CPU, Node Memory" -ForegroundColor Green
 Write-Host "================================================================`n" -ForegroundColor Cyan
