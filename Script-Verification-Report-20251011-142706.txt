@@ -1,0 +1,231 @@
+PYEX SCRIPT VERIFICATION REPORT
+================================
+Date: 2025-10-11 14:27:06
+
+SUMMARY:
+Total Scripts: 31
+OK: 24
+Issues: 7
+
+SCRIPTS:
+
+Script       : Analyze-AzureEnvironment.ps1
+Lines        : 692
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Audit-Complete.ps1
+Lines        : 432
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Auto-Enable-MFA-New-Users.ps1
+Lines        : 45
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Cost-Optimization-Idle-Resources.ps1
+Lines        : 443
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Deploy-AVD.ps1
+Lines        : 177
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Deploy-Azure-Monitor-Alerts.ps1
+Lines        : 646
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Deploy-Bastion-VM.ps1
+Lines        : 103
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Disable-mDNS-Intune-AllDevices.ps1
+Lines        : 50
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Disable-NetBIOS-Intune-AllDevices.ps1
+Lines        : 114
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Disable-WPAD-Intune-AllDevices.ps1
+Lines        : 105
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Enable-MFA-All-Users.ps1
+Lines        : 110
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Execute-AzureFixes.ps1
+Lines        : 210
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : FINAL-CLEANUP.ps1
+Lines        : 198
+SyntaxErrors : 0
+SpecialChars : FOUND
+InGit        : YES
+Status       : ISSUE
+
+Script       : Find-Idle-Resources-Cost-Savings.ps1
+Lines        : 481
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Fix-AzureSecurity-Issues.ps1
+Lines        : 79
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Fix-IAM-Permissions.ps1
+Lines        : 78
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Fix-Idle-Resources.ps1
+Lines        : 140
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Fix-Multi-Subscription-Issues.ps1
+Lines        : 84
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : IAM-Audit-MINIMAL.ps1
+Lines        : 152
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : IAM-Audit-REST.ps1
+Lines        : 146
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : NO
+Status       : ISSUE
+
+Script       : MASTER-Install-All-Scheduled-Tasks.ps1
+Lines        : 49
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Migrate-DC-OnPrem-to-Azure.ps1
+Lines        : 619
+SyntaxErrors : 0
+SpecialChars : FOUND
+InGit        : YES
+Status       : ISSUE
+
+Script       : Monthly-MFA-Report.ps1
+Lines        : 79
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Schedule-ADSecurityReports.ps1
+Lines        : 78
+SyntaxErrors : 3
+SpecialChars : CLEAN
+InGit        : YES
+Status       : ISSUE
+
+Script       : Schedule-CostOptimizationReports.ps1
+Lines        : 78
+SyntaxErrors : 3
+SpecialChars : CLEAN
+InGit        : YES
+Status       : ISSUE
+
+Script       : Schedule-IAMAudit.ps1
+Lines        : 190
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Schedule-MonitorReports.ps1
+Lines        : 83
+SyntaxErrors : 3
+SpecialChars : CLEAN
+InGit        : YES
+Status       : ISSUE
+
+Script       : Schedule-SecurityAuditReports.ps1
+Lines        : 79
+SyntaxErrors : 3
+SpecialChars : CLEAN
+InGit        : YES
+Status       : ISSUE
+
+Script       : Send-IAMReport.ps1
+Lines        : 223
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Ultimate-AD-Security-Hardening.ps1
+Lines        : 231
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+Script       : Ultimate-Multi-Subscription-Audit.ps1
+Lines        : 643
+SyntaxErrors : 0
+SpecialChars : CLEAN
+InGit        : YES
+Status       : OK
+
+
+
+GitHub Status: Up to date
