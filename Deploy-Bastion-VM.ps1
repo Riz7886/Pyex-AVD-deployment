@@ -21,10 +21,8 @@ function Write-Log {
 }
 
 Write-Host ""
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  BASTION VM - 100% AUTOMATED DEPLOYMENT" -ForegroundColor Cyan
-Write-Host "  ALL SCHEDULED TASKS + GIT CLEANUP" -ForegroundColor Cyan
-Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "BASTION VM - 100% AUTOMATED DEPLOYMENT" -ForegroundColor Cyan
+Write-Host "ALL SCHEDULED TASKS + GIT CLEANUP" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Log "Checking Azure CLI"
@@ -107,116 +105,17 @@ az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --co
 Write-Log "Git Removed - NO TRACES" "SUCCESS"
 
 Write-Host ""
-Write-Host "STEP 10: Setup ALL Task Schedulers - 100% AUTOMATED" -ForegroundColor Yellow
-Write-Host "------------------------------------------------------" -ForegroundColor Yellow
+Write-Host "STEP 10: Setup ALL Task Schedulers" -ForegroundColor Yellow
 
-$allTasks = @"
-Write-Host 'Setting up ALL scheduled tasks...' -ForegroundColor Cyan
-Write-Host ''
+$taskScript = "schtasks /Create /TN 'PYEX-Azure-Monitor-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Deploy-Azure-Monitor-Alerts.ps1' /SC WEEKLY /D MON,THU /ST 08:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Cost-Optimization-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Cost-Optimization-Idle-Resources.ps1' /SC WEEKLY /D MON,THU /ST 09:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Security-Audit-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Ultimate-Multi-Subscription-Audit.ps1' /SC WEEKLY /D TUE,FRI /ST 08:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-AD-Security-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\AD-Security-Audit-Multi-Sub.ps1' /SC WEEKLY /D TUE,FRI /ST 09:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Production-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Production-Audit-Reports\Audit-Production.ps1' /SC WEEKLY /D WED,SAT /ST 08:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-Enhanced-Production-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Enhanced-Production-Audit.ps1' /SC WEEKLY /D WED,SAT /ST 09:00 /RU SYSTEM /F; schtasks /Create /TN 'PYEX-AVD-User-Onboarding' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\AVD-User-Onboarding.ps1' /SC DAILY /ST 07:00 /RU SYSTEM /F"
 
-`$baseDir = 'C:\PYEX-Automation\Scripts'
-
-Write-Host 'Creating scheduled tasks...' -ForegroundColor Yellow
-
-schtasks /Create /TN 'PYEX-Azure-Monitor-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Deploy-Azure-Monitor-Alerts.ps1' /SC WEEKLY /D MON,THU /ST 08:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-Cost-Optimization-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Cost-Optimization-Idle-Resources.ps1' /SC WEEKLY /D MON,THU /ST 09:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-Security-Audit-Reports' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Ultimate-Multi-Subscription-Audit.ps1' /SC WEEKLY /D TUE,FRI /ST 08:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-AD-Security-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\AD-Security-Audit-Multi-Sub.ps1' /SC WEEKLY /D TUE,FRI /ST 09:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-Production-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Production-Audit-Reports\Audit-Production.ps1' /SC WEEKLY /D WED,SAT /ST 08:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-Enhanced-Production-Audit' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\Enhanced-Production-Audit.ps1' /SC WEEKLY /D WED,SAT /ST 09:00 /RU SYSTEM /F
-
-schtasks /Create /TN 'PYEX-AVD-User-Onboarding' /TR 'powershell.exe -ExecutionPolicy Bypass -File C:\PYEX-Automation\Scripts\AVD-User-Onboarding.ps1' /SC DAILY /ST 07:00 /RU SYSTEM /F
-
-if (Test-Path 'C:\PYEX-Automation\Scripts\Schedule-CostOptimizationReports.ps1') {
-    & 'C:\PYEX-Automation\Scripts\Schedule-CostOptimizationReports.ps1'
-}
-
-Write-Host ''
-Write-Host 'ALL TASKS CREATED SUCCESSFULLY!' -ForegroundColor Green
-Write-Host ''
-Write-Host '========================================' -ForegroundColor Cyan
-Write-Host '  SCHEDULED TASKS SUMMARY' -ForegroundColor Cyan
-Write-Host '========================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host '1. Azure Monitor Reports' -ForegroundColor White
-Write-Host '   Schedule: Monday & Thursday 8:00 AM' -ForegroundColor Gray
-Write-Host '   Script: Deploy-Azure-Monitor-Alerts.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '2. Cost Optimization Reports' -ForegroundColor White
-Write-Host '   Schedule: Monday & Thursday 9:00 AM' -ForegroundColor Gray
-Write-Host '   Script: Cost-Optimization-Idle-Resources.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '3. Security Audit Reports' -ForegroundColor White
-Write-Host '   Schedule: Tuesday & Friday 8:00 AM' -ForegroundColor Gray
-Write-Host '   Script: Ultimate-Multi-Subscription-Audit.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '4. AD Security Audit' -ForegroundColor White
-Write-Host '   Schedule: Tuesday & Friday 9:00 AM' -ForegroundColor Gray
-Write-Host '   Script: AD-Security-Audit-Multi-Sub.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '5. Production Audit' -ForegroundColor White
-Write-Host '   Schedule: Wednesday & Saturday 8:00 AM' -ForegroundColor Gray
-Write-Host '   Script: Production-Audit-Reports\Audit-Production.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '6. Enhanced Production Audit' -ForegroundColor White
-Write-Host '   Schedule: Wednesday & Saturday 9:00 AM' -ForegroundColor Gray
-Write-Host '   Script: Enhanced-Production-Audit.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '7. AVD User Onboarding' -ForegroundColor White
-Write-Host '   Schedule: Daily 7:00 AM' -ForegroundColor Gray
-Write-Host '   Script: AVD-User-Onboarding.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host '8. Additional Cost Optimization' -ForegroundColor White
-Write-Host '   Schedule: As configured in script' -ForegroundColor Gray
-Write-Host '   Script: Schedule-CostOptimizationReports.ps1' -ForegroundColor Gray
-Write-Host ''
-Write-Host 'ALL REPORTS WILL RUN AUTOMATICALLY ALL YEAR!' -ForegroundColor Green
-Write-Host 'Reports saved to: C:\PYEX-Automation\Reports' -ForegroundColor White
-Write-Host ''
-
-`$logEntry = @"
-================================================================================
-BASTION VM AUTOMATED TASK SCHEDULER SETUP COMPLETED
-================================================================================
-Date: `$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-VM: $VMName
-Resource Group: $ResourceGroupName
-
-TOTAL SCHEDULED TASKS: 8 (All Running Automatically)
-
-1. PYEX-Azure-Monitor-Reports - Mon/Thu 8:00 AM
-2. PYEX-Cost-Optimization-Reports - Mon/Thu 9:00 AM
-3. PYEX-Security-Audit-Reports - Tue/Fri 8:00 AM
-4. PYEX-AD-Security-Audit - Tue/Fri 9:00 AM
-5. PYEX-Production-Audit - Wed/Sat 8:00 AM
-6. PYEX-Enhanced-Production-Audit - Wed/Sat 9:00 AM
-7. PYEX-AVD-User-Onboarding - Daily 7:00 AM
-8. Additional Cost Optimization - As configured
-
-STATUS: ALL ACTIVE AND RUNNING
-GIT: COMPLETELY REMOVED - NO TRACES
-ACCESS: All 15 subscriptions configured
-================================================================================
-"@
-
-`$logEntry | Out-File 'C:\PYEX-Automation\Logs\task-scheduler-setup.log' -Encoding UTF8
-Write-Host 'Setup log saved to: C:\PYEX-Automation\Logs\task-scheduler-setup.log' -ForegroundColor Cyan
-"@
-
-az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $allTasks --output none 2>$null
+az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $taskScript --output none 2>$null
 Write-Log "8 Tasks Created Successfully" "SUCCESS"
 
 $vmInfo = az vm show --resource-group $ResourceGroupName --name $VMName --show-details --output json | ConvertFrom-Json
 
 Write-Host ""
-Write-Host "============================================================" -ForegroundColor Green
-Write-Host "  DEPLOYMENT COMPLETE - 100% AUTOMATED" -ForegroundColor Green
-Write-Host "============================================================" -ForegroundColor Green
+Write-Host "DEPLOYMENT COMPLETE - 100% AUTOMATED" -ForegroundColor Green
 Write-Host ""
 Write-Host "VM Details:" -ForegroundColor Cyan
 Write-Host "  Name: $VMName" -ForegroundColor White
@@ -231,15 +130,10 @@ Write-Host "  4. AD Security (Tue/Fri 9am)" -ForegroundColor White
 Write-Host "  5. Production Audit (Wed/Sat 8am)" -ForegroundColor White
 Write-Host "  6. Enhanced Production (Wed/Sat 9am)" -ForegroundColor White
 Write-Host "  7. AVD User Onboarding (Daily 7am)" -ForegroundColor White
-Write-Host "  8. Additional Cost Optimization (Configured)" -ForegroundColor White
-Write-Host ""
-Write-Host "Scripts Location: C:\PYEX-Automation\Scripts" -ForegroundColor Cyan
-Write-Host "Reports Location: C:\PYEX-Automation\Reports" -ForegroundColor Cyan
-Write-Host "Logs Location: C:\PYEX-Automation\Logs" -ForegroundColor Cyan
+Write-Host "  8. Additional Cost Optimization" -ForegroundColor White
 Write-Host ""
 Write-Host "Git Status: COMPLETELY REMOVED - NO TRACES" -ForegroundColor Green
 Write-Host "Subscriptions: All $($subscriptions.Count) configured" -ForegroundColor Green
 Write-Host ""
 Write-Host "STATUS: READY FOR CLIENT DEPLOYMENT" -ForegroundColor Green
-Write-Host "All reports will run automatically all year long!" -ForegroundColor Green
 Write-Host ""
