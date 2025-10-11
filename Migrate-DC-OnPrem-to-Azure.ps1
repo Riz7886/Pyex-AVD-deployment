@@ -553,11 +553,11 @@ function Start-Phase7Decommission {
     Write-Host "================================================================`n" -ForegroundColor Cyan
     
     Write-Host "DECOMMISSION CHECKLIST:" -ForegroundColor Yellow
-    Write-Host "`n✓ Verify Azure DCs are healthy" -ForegroundColor White
-    Write-Host "✓ Verify AD replication is working" -ForegroundColor White
-    Write-Host "✓ Verify all FSMO roles transferred" -ForegroundColor White
-    Write-Host "✓ Verify clients using Azure DCs for DNS" -ForegroundColor White
-    Write-Host "✓ Verify no services pointing to on-prem DCs" -ForegroundColor White
+    Write-Host "`n Verify Azure DCs are healthy" -ForegroundColor White
+    Write-Host " Verify AD replication is working" -ForegroundColor White
+    Write-Host " Verify all FSMO roles transferred" -ForegroundColor White
+    Write-Host " Verify clients using Azure DCs for DNS" -ForegroundColor White
+    Write-Host " Verify no services pointing to on-prem DCs" -ForegroundColor White
     Write-Host "`nWait 30 days before final removal" -ForegroundColor Yellow
     
     $decommissionScript = @"
@@ -672,3 +672,4 @@ try {
     Write-Host "`nMigration framework encountered an error. Check logs." -ForegroundColor Red
     exit 1
 }
+

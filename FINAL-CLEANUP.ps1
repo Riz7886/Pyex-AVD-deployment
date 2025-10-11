@@ -156,17 +156,17 @@ Connect-AzAccount
 
 \`\`\`
 /
-├── Deploy-AVD.ps1
-├── Audit-Complete.ps1
-├── Analyze-AzureEnvironment.ps1
-├── Execute-AzureFixes.ps1
-├── IAM-Audit-MINIMAL.ps1
-├── Schedule-IAMAudit.ps1
-├── Send-IAMReport.ps1
-├── README.md
-├── Configuration/
-├── Documentation/
-└── Scripts/
+ Deploy-AVD.ps1
+ Audit-Complete.ps1
+ Analyze-AzureEnvironment.ps1
+ Execute-AzureFixes.ps1
+ IAM-Audit-MINIMAL.ps1
+ Schedule-IAMAudit.ps1
+ Send-IAMReport.ps1
+ README.md
+ Configuration/
+ Documentation/
+ Scripts/
 \`\`\`
 
 ## Requirements

@@ -99,3 +99,4 @@ foreach ($email in $recipients) {
     Write-Host "  - $email" -ForegroundColor White
 }
 Write-Host ""
+
