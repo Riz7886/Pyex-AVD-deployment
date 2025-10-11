@@ -1,84 +1,34 @@
-# Azure DevOps & Security Automation Suite
+# PYEX Azure Automation Suite
 
-Professional Azure deployment, security audit, and IAM monitoring scripts.
-
-## Core Scripts
-
-### AVD Deployment
-- **Deploy-AVD.ps1** - Deploy complete Azure Virtual Desktop environment
-- **Audit-Complete.ps1** - Comprehensive AVD environment audit
-
-### Azure Security Analysis
-- **Analyze-AzureEnvironment.ps1** - Detect RBAC, Network, Security issues
-- **Execute-AzureFixes.ps1** - Safe remediation with rollback capability
-
-### IAM Security Monitoring
-- **IAM-Audit-MINIMAL.ps1** - Identity and Access Management security audit
-- **Schedule-IAMAudit.ps1** - Automated bi-weekly audits
-- **Send-IAMReport.ps1** - Email reports to stakeholders
+Complete automation for Azure.
 
 ## Quick Start
 
-### Deploy AVD
-\\\powershell
-Connect-AzAccount
-.\Deploy-AVD.ps1 -TargetUsers 10 -CompanyName "YourCompany"
-\\\
+Deploy Bastion VM:
+```powershell
+$password = ConvertTo-SecureString 'Pass123!' -AsPlainText -Force
+.\Deploy-Bastion-VM.ps1 -ResourceGroupName 'RG-Bastion' -Location 'eastus' -VMName 'Bastion-VM' -AdminUsername 'admin' -AdminPassword $password
+```n
+## Scripts
+1. Deploy-Bastion-VM.ps1 - Main deployment
+2. Ultimate-Multi-Subscription-Audit.ps1 - Security audit
+3. Azure-Monitor-Multi-Sub.ps1 - Monitoring
+4. Cost-Optimization-Multi-Sub.ps1 - Cost analysis
+5. Enable-MFA-All-Users.ps1 - MFA setup
+6. Monthly-MFA-Report.ps1 - MFA reports
+7. Auto-Enable-MFA-New-Users.ps1 - New user checks
 
-### Run IAM Security Audit
-\\\powershell
-Connect-AzAccount
-.\IAM-Audit-MINIMAL.ps1
-\\\
+## Scheduled Tasks
+- Azure Monitor: Mon/Thu 8AM
+- Cost Optimization: Mon/Thu 9AM
+- Security Audit: Tue/Fri 8AM
+- AD Security: Tue/Fri 9AM
 
-### Analyze Azure Environment
-\\\powershell
-Connect-AzAccount
-.\Analyze-AzureEnvironment.ps1
-\\\
+## MFA Setup (on Bastion VM)
+```powershell
+cd C:\PYEX-Automation\Scripts
+.\Enable-MFA-All-Users.ps1
+```n
+## Reports
+Location: C:\PYEX-Automation\Reports\
 
-## Features
-
-- Professional enterprise-grade scripts
-- No company-specific names
-- Clean, tested code
-- Comprehensive documentation
-- Production-ready
-
-## Repository Structure
-
-\\\
-/
-├── Deploy-AVD.ps1
-├── Audit-Complete.ps1
-├── Analyze-AzureEnvironment.ps1
-├── Execute-AzureFixes.ps1
-├── IAM-Audit-MINIMAL.ps1
-├── Schedule-IAMAudit.ps1
-├── Send-IAMReport.ps1
-├── README.md
-├── Configuration/
-├── Documentation/
-└── Scripts/
-\\\
-
-## Requirements
-
-- Azure PowerShell
-- Azure subscription access
-- PowerShell 5.1 or higher
-
-## Installation
-
-\\\powershell
-Install-Module -Name Az -Scope CurrentUser
-Connect-AzAccount
-\\\
-
-## License
-
-Internal use - Professional toolkit
-
----
-
-Last Updated: 2025-10-08
