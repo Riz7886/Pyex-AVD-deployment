@@ -263,10 +263,10 @@ for ($i=1; $i -le $vmCount; $i++) {
         $cfg = Set-AzVMOSDisk -VM $cfg -CreateOption FromImage -StorageAccountType Standard_LRS -DiskSizeInGB 128
         $cfg = Set-AzVMBootDiagnostic -VM $cfg -Disable
         New-AzVM -ResourceGroupName $naming.RG -Location $Location -VM $cfg -Tag $tags -WarningAction SilentlyContinue | Out-Null
-        Write-Host " OK" -ForegroundColor Green
+        Write-Host " ✓" -ForegroundColor Green
         $success++
     } catch {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Host " ✗" -ForegroundColor Red
     }
 }
 
@@ -296,5 +296,32 @@ if (!(Test-Path "Configuration")) {
     Tenant=$sub.TenantId
 } | ConvertTo-Json | Out-File "Configuration\deployment-$ts.json"
 
-Write-Host "Credentials saved: Configuration\deployment-$ts.json" -ForegroundColor Green
+Write-Host "Credentials saved: Configuration\deployment-$ts.json`n" -ForegroundColor Green
+
+# Automatically push to GitHub
+Write-Host "Pushing to GitHub..." -ForegroundColor Cyan
+try {
+    # Initialize git if not already done
+    if (!(Test-Path ".git")) {
+        git init
+        git remote add origin https://github.com/Riz7886/-Azure-Automation-Framework.git
+    }
+    
+    # Stage all changes
+    git add .
+    
+    # Commit with deployment info
+    $commitMsg = "AVD Deployment: $CompanyName-$Environment ($ts) - $success VMs deployed"
+    git commit -m $commitMsg
+    
+    # Push to GitHub
+    git push origin main
+    
+    Write-Host " GitHub push successful!" -ForegroundColor Green
+    Write-Host " Repository: https://github.com/Riz7886/-Azure-Automation-Framework" -ForegroundColor White
+} catch {
+    Write-Host " GitHub push failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host " You can manually push later with: git push origin main" -ForegroundColor Yellow
+}
+
 Write-Host ""
