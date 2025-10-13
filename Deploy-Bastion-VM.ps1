@@ -23,7 +23,7 @@ function Write-Log {
 
 Write-Host ""
 Write-Host "BASTION VM - PROFESSIONAL DEPLOYMENT" -ForegroundColor Cyan
-Write-Host "Service Principal + Key Vault + Automated Tasks" -ForegroundColor Cyan
+Write-Host "Service Principal + Key Vault + Automated Tasks + Key Rotation" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Log "Checking Azure CLI"
@@ -192,7 +192,8 @@ $taskScript = @"
     @{Name='PYEX-AD-Security-Audit'; Script='AD-Security-Audit-Multi-Sub.ps1'; Days='TUE,FRI'; Time='09:00'},
     @{Name='PYEX-Production-Audit'; Script='Production-Audit-Reports\Audit-Production.ps1'; Days='WED,SAT'; Time='08:00'},
     @{Name='PYEX-Enhanced-Production-Audit'; Script='Enhanced-Production-Audit.ps1'; Days='WED,SAT'; Time='09:00'},
-    @{Name='PYEX-AVD-User-Onboarding'; Script='AVD-User-Onboarding.ps1'; Days='*'; Time='07:00'; Frequency='DAILY'}
+    @{Name='PYEX-AVD-User-Onboarding'; Script='AVD-User-Onboarding.ps1'; Days='*'; Time='07:00'; Frequency='DAILY'},
+    @{Name='PYEX-Key-Rotation-Monthly'; Script='Rotate-AppConfiguration-Keys.ps1 -Mode rotate -RotationThresholdDays 180'; Days='*'; Time='02:00'; Frequency='MONTHLY'}
 )
 
 foreach (`$task in `$tasks) {
@@ -201,16 +202,18 @@ foreach (`$task in `$tasks) {
     
     if (`$task.Frequency -eq 'DAILY') {
         schtasks /Create /TN `$task.Name /TR `$wrapperCmd /SC DAILY /ST `$task.Time /RU SYSTEM /F
+    } elseif (`$task.Frequency -eq 'MONTHLY') {
+        schtasks /Create /TN `$task.Name /TR `$wrapperCmd /SC MONTHLY /D 1 /ST `$task.Time /RU SYSTEM /F
     } else {
         schtasks /Create /TN `$task.Name /TR `$wrapperCmd /SC WEEKLY /D `$task.Days /ST `$task.Time /RU SYSTEM /F
     }
 }
 
-Write-Host 'All scheduled tasks created successfully'
+Write-Host 'All scheduled tasks created successfully - including monthly key rotation'
 "@
 
 az vm run-command invoke --resource-group $ResourceGroupName --name $VMName --command-id RunPowerShellScript --scripts $taskScript --output none 2>$null
-Write-Log "8 Automated Tasks Created" "SUCCESS"
+Write-Log "9 Automated Tasks Created - including Key Rotation" "SUCCESS"
 
 $vmInfo = az vm show --resource-group $ResourceGroupName --name $VMName --show-details --output json | ConvertFrom-Json
 
@@ -229,7 +232,7 @@ Write-Host "  Key Vault: $KeyVaultName" -ForegroundColor White
 Write-Host "  Managed Identity: Enabled" -ForegroundColor White
 Write-Host "  Credentials: Stored in Key Vault (NOT using your credentials)" -ForegroundColor White
 Write-Host ""
-Write-Host "Scheduled Tasks: 8 ACTIVE" -ForegroundColor Green
+Write-Host "Scheduled Tasks: 9 ACTIVE" -ForegroundColor Green
 Write-Host "  1. Azure Monitor (Mon/Thu 8am)" -ForegroundColor White
 Write-Host "  2. Cost Optimization (Mon/Thu 9am)" -ForegroundColor White
 Write-Host "  3. Security Audit (Tue/Fri 8am)" -ForegroundColor White
@@ -238,6 +241,14 @@ Write-Host "  5. Production Audit (Wed/Sat 8am)" -ForegroundColor White
 Write-Host "  6. Enhanced Production (Wed/Sat 9am)" -ForegroundColor White
 Write-Host "  7. AVD User Onboarding (Daily 7am)" -ForegroundColor White
 Write-Host "  8. Additional Cost Optimization" -ForegroundColor White
+Write-Host "  9. KEY ROTATION (Monthly 1st day 2am)" -ForegroundColor Green
+Write-Host ""
+Write-Host "Key Rotation:" -ForegroundColor Magenta
+Write-Host "  Automatically rotates keys older than 180 days" -ForegroundColor White
+Write-Host "  Zero-downtime rotation for App Configuration and Storage" -ForegroundColor White
+Write-Host "  Auto-updates all dependent App Services" -ForegroundColor White
+Write-Host "  Stores new keys in Key Vault" -ForegroundColor White
+Write-Host "  SOLVES: Access keys not rotated security issue" -ForegroundColor Green
 Write-Host ""
 Write-Host "Authentication Method:" -ForegroundColor Cyan
 Write-Host "  All tasks authenticate using Service Principal from Key Vault" -ForegroundColor White
