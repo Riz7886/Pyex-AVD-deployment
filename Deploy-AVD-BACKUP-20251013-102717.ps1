@@ -1,53 +1,32 @@
-#Requires -Version 5.1
+#Requires -Modules Az
 #Requires -RunAsAdministrator
 
-[CmdletBinding()]
+<#
+.SYNOPSIS
+ Professional AVD Deployment - Client Ready
+.DESCRIPTION
+ Deploys Azure Virtual Desktop for any number of users (10, 20, 50, 100+)
+ - Auto-detects quota and selects best VM size
+ - Professional naming conventions based on company name
+ - Full security (NSG, HTTPS, Key Vault)
+ - Client-ready deployment
+.EXAMPLE
+ .\Deploy-AVD.ps1 -TargetUsers 10 -CompanyName "Contoso"
+ .\Deploy-AVD.ps1 -TargetUsers 25 -CompanyName "AcmeCorp" -Environment "prod"
+#>
+
 param(
-    [Parameter(Mandatory=$false)]
-    [string]$KeyVaultName
+ [Parameter(Mandatory=$true)]
+ [int]$TargetUsers,
+
+ [Parameter(Mandatory=$true)]
+ [string]$CompanyName,
+
+ [ValidateSet("prod","dev","uat","test")]
+ [string]$Environment = "prod",
+
+ [string]$Location = "East US"
 )
-
-$ErrorActionPreference = "Stop"
-
-Write-Host ""
-Write-Host "VDI/AVD DEPLOYMENT - KEY VAULT AUTHENTICATION" -ForegroundColor Cyan
-Write-Host ""
-
-Write-Host "Authenticating with Key Vault..." -ForegroundColor Cyan
-
-try {
-    Connect-AzAccount -Identity -ErrorAction SilentlyContinue | Out-Null
-    
-    if (-not $KeyVaultName) {
-        Write-Host "Auto-detecting Key Vault..." -ForegroundColor Yellow
-        $kvList = Get-AzKeyVault | Where-Object { $_.VaultName -like "kv-pyex-auto-*" }
-        if ($kvList.Count -gt 0) {
-            $KeyVaultName = $kvList[0].VaultName
-            Write-Host "Found Key Vault: $KeyVaultName" -ForegroundColor Green
-        }
-    }
-    
-    if ($KeyVaultName) {
-        $spAppId = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name "SP-AppId" -AsPlainText)
-        $spPassword = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name "SP-Password" -AsPlainText)
-        $tenantId = (Get-AzKeyVaultSecret -VaultName $KeyVaultName -Name "SP-TenantId" -AsPlainText)
-        
-        $securePassword = ConvertTo-SecureString $spPassword -AsPlainText -Force
-        $credential = New-Object System.Management.Automation.PSCredential($spAppId, $securePassword)
-        Connect-AzAccount -ServicePrincipal -Credential $credential -Tenant $tenantId | Out-Null
-        
-        Write-Host "Authenticated using Service Principal from Key Vault" -ForegroundColor Green
-    } else {
-        Write-Host "No Key Vault found, using current authentication" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "Key Vault auth unavailable, using fallback" -ForegroundColor Yellow
-    Connect-AzAccount -ErrorAction SilentlyContinue | Out-Null
-}
-
-Write-Host ""
-Write-Host "Starting VDI/AVD Deployment..." -ForegroundColor Cyan
-Write-Host ""
 
 $ErrorActionPreference = 'Stop'
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -228,4 +207,3 @@ Write-Host " Password: $pw`n" -ForegroundColor Yellow
 } | ConvertTo-Json | Out-File "Configuration\deployment-$ts.json"
 
 Write-Host "Credentials saved: Configuration\deployment-$ts.json`n" -ForegroundColor Green
-
