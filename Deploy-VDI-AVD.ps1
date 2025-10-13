@@ -263,10 +263,10 @@ for ($i=1; $i -le $vmCount; $i++) {
         $cfg = Set-AzVMOSDisk -VM $cfg -CreateOption FromImage -StorageAccountType Standard_LRS -DiskSizeInGB 128
         $cfg = Set-AzVMBootDiagnostic -VM $cfg -Disable
         New-AzVM -ResourceGroupName $naming.RG -Location $Location -VM $cfg -Tag $tags -WarningAction SilentlyContinue | Out-Null
-        Write-Host " ✓" -ForegroundColor Green
+        Write-Host " " -ForegroundColor Green
         $success++
     } catch {
-        Write-Host " ✗" -ForegroundColor Red
+        Write-Host " " -ForegroundColor Red
     }
 }
 
