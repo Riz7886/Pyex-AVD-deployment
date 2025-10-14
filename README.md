@@ -1,34 +1,32 @@
-# PYEX Azure Automation Suite
+# BASTION AUTOMATION
 
-Complete automation for Azure.
+## STEP 1: Deploy Bastion
 
-## Quick Start
+.\Deploy-Bastion-VM.ps1
 
-Deploy Bastion VM:
-```powershell
-$password = ConvertTo-SecureString 'Pass123!' -AsPlainText -Force
-.\Deploy-Bastion-VM.ps1 -ResourceGroupName 'RG-Bastion' -Location 'eastus' -VMName 'Bastion-VM' -AdminUsername 'admin' -AdminPassword $password
-```n
-## Scripts
-1. Deploy-Bastion-VM.ps1 - Main deployment
-2. Ultimate-Multi-Subscription-Audit.ps1 - Security audit
-3. Azure-Monitor-Multi-Sub.ps1 - Monitoring
-4. Cost-Optimization-Multi-Sub.ps1 - Cost analysis
-5. Enable-MFA-All-Users.ps1 - MFA setup
-6. Monthly-MFA-Report.ps1 - MFA reports
-7. Auto-Enable-MFA-New-Users.ps1 - New user checks
+## STEP 2: Complete Setup
 
-## Scheduled Tasks
-- Azure Monitor: Mon/Thu 8AM
-- Cost Optimization: Mon/Thu 9AM
-- Security Audit: Tue/Fri 8AM
-- AD Security: Tue/Fri 9AM
+.\Complete-Bastion-Setup.ps1 -Location eastus -DataDogAPIKey YOUR_KEY -DataDogAppKey YOUR_APP_KEY
 
-## MFA Setup (on Bastion VM)
-```powershell
-cd C:\PYEX-Automation\Scripts
-.\Enable-MFA-All-Users.ps1
-```n
-## Reports
-Location: C:\PYEX-Automation\Reports\
+Creates 1 Key Vault and 8 Service Principals
 
+## STEP 3: Setup DataDog on Bastion
+
+Login to Bastion VM and run:
+
+cd C:\Scripts
+.\Deploy-DataDog-Alerting.ps1 -Mode deploy -KeyVaultName YOUR_VAULT_NAME
+.\Deploy-DataDog-Alerting.ps1 -Mode schedule -KeyVaultName YOUR_VAULT_NAME
+
+## Service Principals
+
+- DataDog-Monitor
+- Azure-Monitor
+- Security-Audit
+- Cost-Optimization
+- IAM-Audit
+- Key-Rotation
+- Backup-Verification
+- Health-Check
+
+Saves 10K-30K dollars annually
