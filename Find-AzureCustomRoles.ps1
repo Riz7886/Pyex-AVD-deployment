@@ -37,13 +37,11 @@ if (-not $account) {
 Write-Host "Connected to subscription: $($account.name)" -ForegroundColor Green
 Write-Host ""
 
-# Set subscription if provided
 if ($SubscriptionId) {
     Write-Host "Setting subscription to: $SubscriptionId" -ForegroundColor Yellow
     az account set --subscription $SubscriptionId
 }
 
-# Define role patterns to search for
 $rolePatterns = @(
     "*Data Engineer*",
     "*data*engineer*high*",
@@ -54,10 +52,7 @@ $rolePatterns = @(
 Write-Host "Searching for custom roles..." -ForegroundColor Yellow
 Write-Host ""
 
-# Get all custom roles
 $customRoles = az role definition list --custom-role-only true | ConvertFrom-Json
-
-# Filter for Data Engineer related roles
 $foundRoles = @()
 
 foreach ($role in $customRoles) {
@@ -69,7 +64,6 @@ foreach ($role in $customRoles) {
     }
 }
 
-# Display results
 if ($foundRoles.Count -eq 0) {
     Write-Host "No Data Engineer custom roles found." -ForegroundColor Yellow
 } else {
@@ -79,13 +73,10 @@ if ($foundRoles.Count -eq 0) {
     $results = @()
     
     foreach ($role in $foundRoles) {
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
         Write-Host "Role Name: $($role.roleName)" -ForegroundColor White -BackgroundColor DarkBlue
         Write-Host "Role ID: $($role.name)" -ForegroundColor Gray
-        Write-Host "Type: $($role.roleType)" -ForegroundColor Gray
         Write-Host "Description: $($role.description)" -ForegroundColor White
         
-        # Get role assignments
         Write-Host "`nChecking role assignments..." -ForegroundColor Yellow
         $assignments = az role assignment list --role $role.name | ConvertFrom-Json
         
@@ -97,8 +88,6 @@ if ($foundRoles.Count -eq 0) {
                 if (-not $principalName) { $principalName = "N/A" }
                 
                 Write-Host "  - $principalName ($($assignment.principalType))" -ForegroundColor White
-                Write-Host "    Scope: $($assignment.scope)" -ForegroundColor Gray
-                Write-Host "    Created: $($assignment.createdOn)" -ForegroundColor Gray
                 
                 $assignmentDetails += @{
                     PrincipalName = $principalName
@@ -108,11 +97,8 @@ if ($foundRoles.Count -eq 0) {
                     CreatedBy = $assignment.createdBy
                 }
             }
-        } else {
-            Write-Host "No assignments found for this role." -ForegroundColor Yellow
         }
         
-        # Check for Robert Schroedle in assignments
         $robertAssignment = $assignments | Where-Object { 
             $_.createdBy -like "*Robert*Schroedle*" -or 
             $_.createdBy -like "*Schroedle*" -or
@@ -123,41 +109,19 @@ if ($foundRoles.Count -eq 0) {
             Write-Host "`n*** Role associated with Robert Schroedle ***" -ForegroundColor Magenta
         }
         
-        # Permissions summary
-        Write-Host "`nPermissions Summary:" -ForegroundColor Yellow
-        Write-Host "  Actions: $($role.permissions[0].actions.Count)" -ForegroundColor White
-        Write-Host "  NotActions: $($role.permissions[0].notActions.Count)" -ForegroundColor White
-        Write-Host "  DataActions: $($role.permissions[0].dataActions.Count)" -ForegroundColor White
-        
-        # Show some key actions
-        if ($role.permissions[0].actions.Count -gt 0) {
-            Write-Host "`nKey Actions (first 5):" -ForegroundColor Yellow
-            $role.permissions[0].actions | Select-Object -First 5 | ForEach-Object {
-                Write-Host "    - $_" -ForegroundColor Gray
-            }
-        }
-        
-        Write-Host ""
-        
-        # Store for export
         $results += @{
             RoleName = $role.roleName
             RoleId = $role.name
-            RoleType = $role.roleType
             Description = $role.description
-            AssignableScopes = $role.assignableScopes
-            Permissions = $role.permissions
             Assignments = $assignmentDetails
             AssociatedWithRobertSchroedle = ($null -ne $robertAssignment)
         }
     }
     
-    # Export results
-    Write-Host "Exporting results to: $OutputPath" -ForegroundColor Yellow
+    Write-Host "`nExporting results to: $OutputPath" -ForegroundColor Yellow
     $results | ConvertTo-Json -Depth 10 | Out-File -FilePath $OutputPath -Encoding UTF8
     Write-Host "Results exported successfully!" -ForegroundColor Green
     
-    # Export CSV if requested
     if ($ExportCSV) {
         $csvPath = $OutputPath -replace '\.json$', '.csv'
         $csvData = $results | ForEach-Object {
