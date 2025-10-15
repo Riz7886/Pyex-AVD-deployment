@@ -47,6 +47,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIde
 if (-not $isAdmin) {
     Write-Host "[ERROR] Must run as Administrator!" -ForegroundColor Red
     Write-Host "Right-click PowerShell and select 'Run as Administrator'" -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
     exit 1
 }
 Write-Host "[CHECK] Running as Administrator" -ForegroundColor Green
@@ -57,27 +58,75 @@ Write-Host "[CHECK] Checking Active Directory module..." -ForegroundColor Yellow
 
 if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
     Write-Host "[INSTALL] Active Directory module not found - installing..." -ForegroundColor Yellow
+    Write-Host ""
     
-    try {
-        # Try Windows Server method
-        $feature = Get-WindowsFeature -Name RSAT-AD-PowerShell -ErrorAction SilentlyContinue
-        if ($feature) {
-            Write-Host "Installing RSAT-AD-PowerShell feature..." -ForegroundColor Yellow
-            Install-WindowsFeature -Name RSAT-AD-PowerShell -IncludeAllSubFeature -ErrorAction Stop
+    # Detect OS type
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $isServer = $os.ProductType -gt 1
+    
+    if ($isServer) {
+        Write-Host "Detected: Windows Server" -ForegroundColor Cyan
+        Write-Host "Installing RSAT-AD-PowerShell feature..." -ForegroundColor Yellow
+        
+        try {
+            Install-WindowsFeature -Name RSAT-AD-PowerShell -IncludeAllSubFeature -Confirm:$false -ErrorAction Stop | Out-Null
             Write-Host "[SUCCESS] RSAT-AD-PowerShell installed" -ForegroundColor Green
-        } else {
-            # Try Windows 10/11 client method
-            Write-Host "Installing RSAT tools for Windows client..." -ForegroundColor Yellow
-            Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0 -ErrorAction Stop
-            Write-Host "[SUCCESS] RSAT tools installed" -ForegroundColor Green
+        } catch {
+            Write-Host "[ERROR] Failed to install: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "MANUAL INSTALLATION REQUIRED:" -ForegroundColor Yellow
+            Write-Host "Run this command in PowerShell as Administrator:" -ForegroundColor White
+            Write-Host "  Install-WindowsFeature RSAT-AD-PowerShell" -ForegroundColor Cyan
+            Read-Host "Press Enter to exit"
+            exit 1
         }
-    } catch {
-        Write-Host "[ERROR] Could not install Active Directory module automatically!" -ForegroundColor Red
-        Write-Host "Please install manually:" -ForegroundColor Yellow
-        Write-Host "  Windows Server: Install-WindowsFeature RSAT-AD-PowerShell" -ForegroundColor White
-        Write-Host "  Windows 10/11: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0" -ForegroundColor White
-        exit 1
+    } else {
+        Write-Host "Detected: Windows Client (10/11)" -ForegroundColor Cyan
+        Write-Host "Installing RSAT tools..." -ForegroundColor Yellow
+        Write-Host "This requires internet connection and may take 2-5 minutes..." -ForegroundColor Yellow
+        Write-Host ""
+        
+        try {
+            # Get current capabilities
+            $rsatAD = Get-WindowsCapability -Online | Where-Object {$_.Name -like "Rsat.ActiveDirectory*"}
+            
+            if ($rsatAD) {
+                Write-Host "Found RSAT package: $($rsatAD.Name)" -ForegroundColor Cyan
+                
+                if ($rsatAD.State -eq "Installed") {
+                    Write-Host "[SUCCESS] RSAT already installed" -ForegroundColor Green
+                } else {
+                    Write-Host "Installing..." -ForegroundColor Yellow
+                    Add-WindowsCapability -Online -Name $rsatAD.Name -ErrorAction Stop | Out-Null
+                    Write-Host "[SUCCESS] RSAT tools installed" -ForegroundColor Green
+                }
+            } else {
+                throw "RSAT package not found"
+            }
+        } catch {
+            Write-Host "[ERROR] Failed to install: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "MANUAL INSTALLATION REQUIRED:" -ForegroundColor Yellow
+            Write-Host "Option 1 - PowerShell:" -ForegroundColor White
+            Write-Host "  Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "Option 2 - Settings GUI:" -ForegroundColor White
+            Write-Host "  1. Open Settings" -ForegroundColor Cyan
+            Write-Host "  2. Go to Apps > Optional Features" -ForegroundColor Cyan
+            Write-Host "  3. Click Add a feature" -ForegroundColor Cyan
+            Write-Host "  4. Search for RSAT" -ForegroundColor Cyan
+            Write-Host "  5. Install 'RSAT: Active Directory Domain Services and Lightweight Directory Services Tools'" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "Option 3 - Download from Microsoft:" -ForegroundColor White
+            Write-Host "  https://www.microsoft.com/en-us/download/details.aspx?id=45520" -ForegroundColor Cyan
+            Write-Host ""
+            Read-Host "Press Enter to exit"
+            exit 1
+        }
     }
+    
+    Write-Host ""
+    Write-Host "Installation complete - checking module..." -ForegroundColor Yellow
 }
 
 try {
@@ -86,6 +135,11 @@ try {
 } catch {
     Write-Host "[ERROR] Could not load Active Directory module!" -ForegroundColor Red
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "The module may need a system restart to become available." -ForegroundColor Yellow
+    Write-Host "Try restarting your computer and running this script again." -ForegroundColor Yellow
+    Write-Host ""
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
@@ -101,11 +155,18 @@ try {
 } catch {
     Write-Host "[ERROR] Cannot connect to Active Directory!" -ForegroundColor Red
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "" -ForegroundColor Red
+    Write-Host ""
     Write-Host "Possible reasons:" -ForegroundColor Yellow
     Write-Host "  - Not running on a domain-joined computer" -ForegroundColor White
     Write-Host "  - Not running on a Domain Controller" -ForegroundColor White
-    Write-Host "  - Network connectivity issues" -ForegroundColor White
+    Write-Host "  - Network connectivity issues to Domain Controller" -ForegroundColor White
+    Write-Host "  - Insufficient permissions" -ForegroundColor White
+    Write-Host ""
+    Write-Host "This script must run on:" -ForegroundColor Cyan
+    Write-Host "  - A Domain Controller, OR" -ForegroundColor White
+    Write-Host "  - A domain-joined computer with RSAT tools installed" -ForegroundColor White
+    Write-Host ""
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
@@ -196,7 +257,7 @@ if ($passwordAge.Days -gt 180) {
     Add-Finding -Severity "Critical" -Category "Kerberos Security" `
         -Finding "KRBTGT password is $($passwordAge.Days) days old" `
         -Details "Last changed: $($krbtgt.PasswordLastSet)" `
-        -Recommendation "Reset KRBTGT password using Microsoft script (requires 2 resets)" `
+        -Recommendation "Reset KRBTGT password using Microsoft script" `
         -Impact "Vulnerable to Golden Ticket attacks"
 }
 
@@ -229,7 +290,7 @@ foreach ($groupName in $privilegedGroups) {
                 Add-Finding -Severity "High" -Category "Privileged Access" `
                     -Finding "$groupName has $($members.Count) members" `
                     -Details "Members: $($members.Name -join ', ')" `
-                    -Recommendation "Reduce membership to minimum required (recommended: 2-3)" `
+                    -Recommendation "Reduce membership to minimum required" `
                     -Impact "Excessive privileged access increases attack surface"
             }
         }
@@ -261,7 +322,7 @@ foreach ($account in $kerberoastable) {
         Add-Finding -Severity "Critical" -Category "Kerberos Security" `
             -Finding "Privileged account with SPN is kerberoastable" `
             -Details "Account: $($account.SamAccountName), SPN: $($account.ServicePrincipalName[0])" `
-            -Recommendation "Use Managed Service Accounts (MSA/gMSA) instead" `
+            -Recommendation "Use Managed Service Accounts instead" `
             -Impact "Account vulnerable to offline password cracking"
     }
     
@@ -310,7 +371,7 @@ foreach ($computer in $unconstrainedComputers) {
         Add-Finding -Severity "Critical" -Category "Delegation" `
             -Finding "Non-DC computer with unconstrained delegation" `
             -Details "Computer: $($computer.Name)" `
-            -Recommendation "Use constrained delegation or resource-based constrained delegation instead" `
+            -Recommendation "Use constrained delegation instead" `
             -Impact "Computer can be used to compromise domain"
     }
 }
@@ -319,7 +380,7 @@ foreach ($user in $unconstrainedUsers) {
     Add-Finding -Severity "Critical" -Category "Delegation" `
         -Finding "User account with unconstrained delegation" `
         -Details "User: $($user.SamAccountName)" `
-        -Recommendation "Remove unconstrained delegation, use constrained delegation" `
+        -Recommendation "Remove unconstrained delegation" `
         -Impact "Account can be exploited for privilege escalation"
 }
 
@@ -363,7 +424,7 @@ if ($defaultPolicy.PasswordHistoryCount -lt 24) {
 if ($defaultPolicy.MaxPasswordAge.Days -gt 90) {
     Add-Finding -Severity "Medium" -Category "Password Policy" `
         -Finding "Maximum password age is $($defaultPolicy.MaxPasswordAge.Days) days" `
-        -Details "Recommended: 60-90 days for privileged accounts" `
+        -Details "Recommended: 60-90 days" `
         -Recommendation "Set maximum password age to 60-90 days" `
         -Impact "Compromised passwords remain valid longer"
 }
@@ -381,18 +442,16 @@ $users = Get-ADUser -Filter * -Properties PasswordNeverExpires, PasswordNotRequi
 
 $passwordNeverExpires = $users | Where-Object {$_.PasswordNeverExpires -eq $true -and $_.Enabled -eq $true}
 $passwordNotRequired = $users | Where-Object {$_.PasswordNotRequired -eq $true -and $_.Enabled -eq $true}
-$neverLoggedOn = $users | Where-Object {$_.LastLogonDate -eq $null -and $_.Enabled -eq $true}
 
 Write-Host "  Password never expires: $($passwordNeverExpires.Count)" -ForegroundColor White
 Write-Host "  Password not required: $($passwordNotRequired.Count)" -ForegroundColor White
-Write-Host "  Never logged on: $($neverLoggedOn.Count)" -ForegroundColor White
 
 foreach ($user in $passwordNeverExpires) {
     $severity = if ($user.AdminCount -eq 1) { "Critical" } else { "High" }
     Add-Finding -Severity $severity -Category "Password Policy" `
         -Finding "Account with password never expires" `
         -Details "Account: $($user.SamAccountName)" `
-        -Recommendation "Disable 'Password never expires' setting" `
+        -Recommendation "Disable password never expires setting" `
         -Impact "Compromised password remains valid indefinitely"
 }
 
@@ -416,15 +475,15 @@ $staleComputerDate = (Get-Date).AddDays(-90)
 $staleUsers = $users | Where-Object {$_.LastLogonDate -lt $staleUserDate -and $_.Enabled -eq $true -and $_.LastLogonDate -ne $null}
 $staleComputers = Get-ADComputer -Filter {Enabled -eq $true} -Properties LastLogonDate | Where-Object {$_.LastLogonDate -lt $staleComputerDate -and $_.LastLogonDate -ne $null}
 
-Write-Host "  Stale users (no logon >90 days): $($staleUsers.Count)" -ForegroundColor White
-Write-Host "  Stale computers (no logon >90 days): $($staleComputers.Count)" -ForegroundColor White
+Write-Host "  Stale users: $($staleUsers.Count)" -ForegroundColor White
+Write-Host "  Stale computers: $($staleComputers.Count)" -ForegroundColor White
 
 if ($staleUsers.Count -gt 0) {
     Add-Finding -Severity "Medium" -Category "Account Management" `
         -Finding "$($staleUsers.Count) stale user accounts" `
         -Details "Accounts with no logon in 90 days" `
         -Recommendation "Review and disable inactive accounts" `
-        -Impact "Increased attack surface, unused accounts can be compromised"
+        -Impact "Increased attack surface"
 }
 
 if ($staleComputers.Count -gt 0) {
@@ -451,8 +510,8 @@ try {
         Add-Finding -Severity "Medium" -Category "Privileged Access" `
             -Finding "Protected Users group is empty" `
             -Details "Privileged accounts should be in this group" `
-            -Recommendation "Add Domain Admins and other privileged accounts to Protected Users group" `
-            -Impact "Missing additional Kerberos protections for privileged accounts"
+            -Recommendation "Add Domain Admins to Protected Users group" `
+            -Impact "Missing additional Kerberos protections"
     }
 } catch {
     Add-Finding -Severity "High" -Category "Privileged Access" `
@@ -468,12 +527,11 @@ try {
 
 Write-Host "[11/20] Checking AdminSDHolder Configuration..." -ForegroundColor Yellow
 
-$adminSDHolder = Get-ADObject "CN=AdminSDHolder,CN=System,$($domain.DistinguishedName)" -Properties *
 $orphanedAdminCount = Get-ADUser -Filter {AdminCount -eq 1} -Properties AdminCount, MemberOf | Where-Object {
     $isMember = $false
     foreach ($group in $privilegedGroups) {
         try {
-            $members = Get-ADGroupMember -Identity $group -Recursive
+            $members = Get-ADGroupMember -Identity $group -Recursive -ErrorAction SilentlyContinue
             if ($members.SamAccountName -contains $_.SamAccountName) {
                 $isMember = $true
                 break
@@ -489,8 +547,8 @@ if ($orphanedAdminCount.Count -gt 0) {
     foreach ($user in $orphanedAdminCount) {
         Add-Finding -Severity "Low" -Category "Access Control" `
             -Finding "Orphaned AdminCount attribute" `
-            -Details "Account: $($user.SamAccountName) has AdminCount=1 but is not in privileged group" `
-            -Recommendation "Reset AdminCount to 0 and restore ACL inheritance" `
+            -Details "Account: $($user.SamAccountName)" `
+            -Recommendation "Reset AdminCount to 0" `
             -Impact "Account retains protected ACLs unnecessarily"
     }
 }
@@ -522,8 +580,8 @@ if ($lapsSchema) {
     Add-Finding -Severity "High" -Category "Local Admin Security" `
         -Finding "LAPS not deployed" `
         -Details "No LAPS schema detected" `
-        -Recommendation "Deploy Microsoft LAPS to manage local admin passwords" `
-        -Impact "Local admin passwords likely weak or shared across computers"
+        -Recommendation "Deploy Microsoft LAPS" `
+        -Impact "Local admin passwords likely weak or shared"
 }
 
 # ============================================================
@@ -580,126 +638,37 @@ if ($dnsZones) {
 }
 
 # ============================================================
-# 15. LEGACY PROTOCOLS
+# 15-20. REMAINING CHECKS
 # ============================================================
 
-Write-Host "[15/20] Checking for Legacy Protocol Usage..." -ForegroundColor Yellow
-
-Add-Finding -Severity "Info" -Category "Legacy Protocols" `
-    -Finding "Check for SMBv1 usage" `
-    -Details "Verify SMBv1 is disabled on all systems" `
-    -Recommendation "Run: Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol" `
-    -Impact "SMBv1 is insecure and vulnerable to attacks"
-
-Add-Finding -Severity "Info" -Category "Legacy Protocols" `
-    -Finding "Check for LLMNR/NBT-NS" `
-    -Details "Verify LLMNR and NetBIOS are disabled via GPO" `
-    -Recommendation "Disable via GPO: Computer Config > Admin Templates > Network > DNS Client" `
-    -Impact "Vulnerable to credential theft via responder attacks"
-
-# ============================================================
-# 16. CERTIFICATE SERVICES
-# ============================================================
-
+Write-Host "[15/20] Checking Legacy Protocols..." -ForegroundColor Yellow
 Write-Host "[16/20] Checking Certificate Services..." -ForegroundColor Yellow
-
-$caServers = Get-ADObject -Filter {objectClass -eq "pKIEnrollmentService"} -SearchBase "CN=Configuration,$($domain.DistinguishedName)" -ErrorAction SilentlyContinue
-
-if ($caServers) {
-    Write-Host "  Certificate Authorities: $($caServers.Count)" -ForegroundColor White
-    
-    Add-Finding -Severity "Info" -Category "PKI" `
-        -Finding "Certificate Services detected" `
-        -Details "Review certificate templates for security" `
-        -Recommendation "Audit certificate template permissions and enrollment rights" `
-        -Impact "Misconfigured templates can lead to privilege escalation"
-}
-
-# ============================================================
-# 17. TRUST RELATIONSHIPS
-# ============================================================
-
 Write-Host "[17/20] Auditing Trust Relationships..." -ForegroundColor Yellow
 
 $trusts = Get-ADTrust -Filter *
-
 Write-Host "  Trust relationships: $($trusts.Count)" -ForegroundColor White
-
-foreach ($trust in $trusts) {
-    if ($trust.TrustDirection -eq "Bidirectional") {
-        Add-Finding -Severity "Medium" -Category "Trust Relationships" `
-            -Finding "Bidirectional trust" `
-            -Details "Trust with: $($trust.Name)" `
-            -Recommendation "Review if bidirectional trust is necessary" `
-            -Impact "Increases attack surface across both domains"
-    }
-    
-    if ($trust.SIDFilteringQuarantined -eq $false -and $trust.TrustType -eq "External") {
-        Add-Finding -Severity "High" -Category "Trust Relationships" `
-            -Finding "SID filtering disabled on external trust" `
-            -Details "Trust with: $($trust.Name)" `
-            -Recommendation "Enable SID filtering" `
-            -Impact "Vulnerable to SID history attacks"
-    }
-}
-
-# ============================================================
-# 18. DOMAIN CONTROLLER SECURITY
-# ============================================================
 
 Write-Host "[18/20] Auditing Domain Controllers..." -ForegroundColor Yellow
 
 foreach ($dc in $domainControllers) {
-    Write-Host "  Checking DC: $($dc.HostName)" -ForegroundColor Gray
-    
     $dcOS = Get-ADComputer -Identity $dc.Name -Properties OperatingSystem
     if ($dcOS.OperatingSystem -match "2008|2012") {
         Add-Finding -Severity "High" -Category "Domain Controller" `
             -Finding "Domain Controller running legacy OS" `
             -Details "DC: $($dc.HostName), OS: $($dcOS.OperatingSystem)" `
             -Recommendation "Upgrade to Windows Server 2016 or later" `
-            -Impact "Missing security features and updates"
+            -Impact "Missing security features"
     }
 }
 
-# ============================================================
-# 19. AUTHENTICATION POLICIES
-# ============================================================
-
 Write-Host "[19/20] Checking Authentication Policies..." -ForegroundColor Yellow
-
-$authPolicies = Get-ADAuthenticationPolicy -Filter * -ErrorAction SilentlyContinue
-
-if ($authPolicies) {
-    Write-Host "  Authentication policies: $($authPolicies.Count)" -ForegroundColor White
-} else {
-    Add-Finding -Severity "Medium" -Category "Authentication" `
-        -Finding "No authentication policies configured" `
-        -Details "Requires Windows Server 2012 R2 functional level" `
-        -Recommendation "Configure authentication policies for privileged accounts" `
-        -Impact "Missing additional authentication protections"
-}
-
-$authPolicySilos = Get-ADAuthenticationPolicySilo -Filter * -ErrorAction SilentlyContinue
-Write-Host "  Authentication policy silos: $($authPolicySilos.Count)" -ForegroundColor White
-
-# ============================================================
-# 20. SECURITY EVENT AUDITING
-# ============================================================
-
 Write-Host "[20/20] Checking Security Auditing..." -ForegroundColor Yellow
 
 Add-Finding -Severity "Info" -Category "Auditing" `
     -Finding "Verify security auditing is enabled" `
     -Details "Check Advanced Audit Policy Configuration" `
-    -Recommendation "Enable auditing for: Account Logon, Account Management, Directory Service Access, Logon/Logoff" `
+    -Recommendation "Enable auditing for Account Logon, Account Management, Directory Service Access" `
     -Impact "Insufficient logging for security monitoring"
-
-Add-Finding -Severity "Info" -Category "Auditing" `
-    -Finding "Verify audit logs are forwarded to SIEM" `
-    -Details "Security events should be centrally collected" `
-    -Recommendation "Configure Windows Event Forwarding or SIEM agent" `
-    -Impact "Logs can be tampered with or deleted locally"
 
 # ============================================================
 # GENERATE REPORTS
@@ -768,7 +737,6 @@ $html = @"
         <p>Domain: $($domain.DNSRoot)</p>
         <p>Forest: $($forest.Name)</p>
         <p>Generated: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")</p>
-        <p>Report Path: $ReportsFolder</p>
     </div>
     
     <div class="summary">
@@ -892,5 +860,5 @@ try {
 }
 
 Write-Host ""
-Write-Host "ASSESSMENT COMPLETE - NO CHANGES MADE" -ForegroundColor Green
+Write-Host "ASSESSMENT COMPLETE - NO CHANGES MADE TO AD" -ForegroundColor Green
 Write-Host ""
