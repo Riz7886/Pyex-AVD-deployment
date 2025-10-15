@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-#Requires -Modules ActiveDirectory
+#Requires -RunAsAdministrator
 
 <#
 .SYNOPSIS
@@ -8,19 +8,7 @@
 .DESCRIPTION
     Comprehensive read-only security assessment of Active Directory
     NO CHANGES MADE - ASSESSMENT ONLY
-    
-    Checks 50+ security configurations including:
-    - Kerberos vulnerabilities
-    - Password policies
-    - Privileged access
-    - GPO security
-    - Service accounts
-    - Legacy protocols
-    - Certificate services
-    - And much more
-    
-.EXAMPLE
-    .\AD-Security-Assessment.ps1
+    FULLY AUTOMATIC - Installs required modules if missing
 #>
 
 [CmdletBinding()]
@@ -54,33 +42,70 @@ Write-Host "  CSV:  $csvReportPath" -ForegroundColor White
 Write-Host "  HTML: $htmlReportPath" -ForegroundColor White
 Write-Host ""
 
-# Check prerequisites
-Write-Host "[CHECK] Verifying prerequisites..." -ForegroundColor Yellow
-
-if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
-    Write-Host "[ERROR] Active Directory PowerShell module not installed!" -ForegroundColor Red
-    Write-Host "Install: Install-WindowsFeature RSAT-AD-PowerShell" -ForegroundColor Yellow
-    exit 1
-}
-
-Import-Module ActiveDirectory -ErrorAction Stop
-Write-Host "[CHECK] Active Directory module loaded" -ForegroundColor Green
-
+# Check if running as Administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "[ERROR] Must run as Administrator!" -ForegroundColor Red
+    Write-Host "Right-click PowerShell and select 'Run as Administrator'" -ForegroundColor Yellow
     exit 1
 }
 Write-Host "[CHECK] Running as Administrator" -ForegroundColor Green
 
+# Check and install Active Directory module
+Write-Host ""
+Write-Host "[CHECK] Checking Active Directory module..." -ForegroundColor Yellow
+
+if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
+    Write-Host "[INSTALL] Active Directory module not found - installing..." -ForegroundColor Yellow
+    
+    try {
+        # Try Windows Server method
+        $feature = Get-WindowsFeature -Name RSAT-AD-PowerShell -ErrorAction SilentlyContinue
+        if ($feature) {
+            Write-Host "Installing RSAT-AD-PowerShell feature..." -ForegroundColor Yellow
+            Install-WindowsFeature -Name RSAT-AD-PowerShell -IncludeAllSubFeature -ErrorAction Stop
+            Write-Host "[SUCCESS] RSAT-AD-PowerShell installed" -ForegroundColor Green
+        } else {
+            # Try Windows 10/11 client method
+            Write-Host "Installing RSAT tools for Windows client..." -ForegroundColor Yellow
+            Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0 -ErrorAction Stop
+            Write-Host "[SUCCESS] RSAT tools installed" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "[ERROR] Could not install Active Directory module automatically!" -ForegroundColor Red
+        Write-Host "Please install manually:" -ForegroundColor Yellow
+        Write-Host "  Windows Server: Install-WindowsFeature RSAT-AD-PowerShell" -ForegroundColor White
+        Write-Host "  Windows 10/11: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0" -ForegroundColor White
+        exit 1
+    }
+}
+
+try {
+    Import-Module ActiveDirectory -ErrorAction Stop
+    Write-Host "[CHECK] Active Directory module loaded" -ForegroundColor Green
+} catch {
+    Write-Host "[ERROR] Could not load Active Directory module!" -ForegroundColor Red
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+# Connect to Active Directory
+Write-Host ""
+Write-Host "[CHECK] Connecting to Active Directory..." -ForegroundColor Yellow
+
 try {
     $domain = Get-ADDomain -ErrorAction Stop
     $forest = Get-ADForest -ErrorAction Stop
-    Write-Host "[CHECK] Connected to domain: $($domain.DNSRoot)" -ForegroundColor Green
-    Write-Host "[CHECK] Forest: $($forest.Name)" -ForegroundColor Green
+    Write-Host "[SUCCESS] Connected to domain: $($domain.DNSRoot)" -ForegroundColor Green
+    Write-Host "[SUCCESS] Forest: $($forest.Name)" -ForegroundColor Green
 } catch {
     Write-Host "[ERROR] Cannot connect to Active Directory!" -ForegroundColor Red
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    Write-Host "Possible reasons:" -ForegroundColor Yellow
+    Write-Host "  - Not running on a domain-joined computer" -ForegroundColor White
+    Write-Host "  - Not running on a Domain Controller" -ForegroundColor White
+    Write-Host "  - Network connectivity issues" -ForegroundColor White
     exit 1
 }
 
@@ -131,17 +156,17 @@ Write-Host "[1/20] Assessing Domain Configuration..." -ForegroundColor Yellow
 $domainControllers = Get-ADDomainController -Filter *
 Write-Host "  Domain Controllers: $($domainControllers.Count)" -ForegroundColor White
 
-if ($domain.DomainMode -notmatch "2016") {
+if ($domain.DomainMode -notmatch "2016|2019|2022") {
     Add-Finding -Severity "High" -Category "Domain Configuration" `
-        -Finding "Domain functional level not at Windows Server 2016" `
+        -Finding "Domain functional level not at Windows Server 2016 or higher" `
         -Details "Current level: $($domain.DomainMode)" `
         -Recommendation "Upgrade to Windows Server 2016 functional level or higher" `
         -Impact "Missing modern security features"
 }
 
-if ($forest.ForestMode -notmatch "2016") {
+if ($forest.ForestMode -notmatch "2016|2019|2022") {
     Add-Finding -Severity "High" -Category "Forest Configuration" `
-        -Finding "Forest functional level not at Windows Server 2016" `
+        -Finding "Forest functional level not at Windows Server 2016 or higher" `
         -Details "Current level: $($forest.ForestMode)" `
         -Recommendation "Upgrade to Windows Server 2016 functional level or higher" `
         -Impact "Missing modern security features"
@@ -152,7 +177,7 @@ if ($recycleBin.EnabledScopes.Count -eq 0) {
     Add-Finding -Severity "Medium" -Category "Domain Configuration" `
         -Finding "AD Recycle Bin not enabled" `
         -Details "Deleted objects cannot be easily recovered" `
-        -Recommendation "Enable-ADOptionalFeature -Identity 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target $($forest.Name)" `
+        -Recommendation "Enable AD Recycle Bin" `
         -Impact "No easy recovery of accidentally deleted AD objects"
 }
 
@@ -264,7 +289,7 @@ foreach ($account in $asrepRoastable) {
     Add-Finding -Severity "Critical" -Category "Kerberos Security" `
         -Finding "Account does not require Kerberos pre-authentication" `
         -Details "Account: $($account.SamAccountName)" `
-        -Recommendation "Enable Kerberos pre-authentication (disable 'Do not require Kerberos preauthentication')" `
+        -Recommendation "Enable Kerberos pre-authentication" `
         -Impact "Account vulnerable to AS-REP roasting attack"
 }
 
@@ -343,7 +368,6 @@ if ($defaultPolicy.MaxPasswordAge.Days -gt 90) {
         -Impact "Compromised passwords remain valid longer"
 }
 
-# Check for fine-grained password policies
 $fgpp = Get-ADFineGrainedPasswordPolicy -Filter *
 Write-Host "  Fine-grained password policies: $($fgpp.Count)" -ForegroundColor Gray
 
@@ -398,7 +422,7 @@ Write-Host "  Stale computers (no logon >90 days): $($staleComputers.Count)" -Fo
 if ($staleUsers.Count -gt 0) {
     Add-Finding -Severity "Medium" -Category "Account Management" `
         -Finding "$($staleUsers.Count) stale user accounts" `
-        -Details "Accounts with no logon in 90+ days" `
+        -Details "Accounts with no logon in 90 days" `
         -Recommendation "Review and disable inactive accounts" `
         -Impact "Increased attack surface, unused accounts can be compromised"
 }
@@ -406,7 +430,7 @@ if ($staleUsers.Count -gt 0) {
 if ($staleComputers.Count -gt 0) {
     Add-Finding -Severity "Medium" -Category "Account Management" `
         -Finding "$($staleComputers.Count) stale computer accounts" `
-        -Details "Computers with no logon in 90+ days" `
+        -Details "Computers with no logon in 90 days" `
         -Recommendation "Review and disable inactive computer accounts" `
         -Impact "Stale accounts can be exploited"
 }
@@ -511,12 +535,6 @@ Write-Host "[13/20] Auditing Group Policy Objects..." -ForegroundColor Yellow
 $gpos = Get-GPO -All
 Write-Host "  Total GPOs: $($gpos.Count)" -ForegroundColor White
 
-$unlinkedGPOs = $gpos | Where-Object {
-    $_ | Get-GPOReport -ReportType XML | Select-String -Pattern "Not linked" -Quiet
-}
-
-Write-Host "  Unlinked GPOs: $($unlinkedGPOs.Count)" -ForegroundColor White
-
 foreach ($gpo in $gpos) {
     $gpoPerms = Get-GPPermission -Guid $gpo.Id -All
     $authUsers = $gpoPerms | Where-Object {$_.Trustee.Name -eq "Authenticated Users" -and $_.Permission -eq "GpoEditDeleteModifySecurity"}
@@ -571,7 +589,7 @@ Add-Finding -Severity "Info" -Category "Legacy Protocols" `
     -Finding "Check for SMBv1 usage" `
     -Details "Verify SMBv1 is disabled on all systems" `
     -Recommendation "Run: Get-WindowsOptionalFeature -Online -FeatureName SMB1Protocol" `
-    -Impact "SMBv1 is insecure and vulnerable to attacks like WannaCry"
+    -Impact "SMBv1 is insecure and vulnerable to attacks"
 
 Add-Finding -Severity "Info" -Category "Legacy Protocols" `
     -Finding "Check for LLMNR/NBT-NS" `
@@ -674,7 +692,7 @@ Write-Host "[20/20] Checking Security Auditing..." -ForegroundColor Yellow
 Add-Finding -Severity "Info" -Category "Auditing" `
     -Finding "Verify security auditing is enabled" `
     -Details "Check Advanced Audit Policy Configuration" `
-    -Recommendation "Enable auditing for: Account Logon, Account Management, Directory Service Access, Logon/Logoff, Object Access, Policy Change, Privilege Use, System" `
+    -Recommendation "Enable auditing for: Account Logon, Account Management, Directory Service Access, Logon/Logoff" `
     -Impact "Insufficient logging for security monitoring"
 
 Add-Finding -Severity "Info" -Category "Auditing" `
@@ -693,7 +711,6 @@ Write-Host "  GENERATING REPORTS" -ForegroundColor Cyan
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Save CSV
 Write-Host "Saving CSV report..." -ForegroundColor Yellow
 try {
     $global:findings | Export-Csv -Path $csvReportPath -NoTypeInformation -Encoding UTF8
@@ -707,7 +724,6 @@ try {
     Write-Host "[ERROR] Failed to save CSV: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-# Generate HTML
 Write-Host ""
 Write-Host "Generating HTML report..." -ForegroundColor Yellow
 
@@ -867,7 +883,6 @@ Write-Host "  CSV:  $csvReportPath" -ForegroundColor White
 Write-Host "  HTML: $htmlReportPath" -ForegroundColor White
 Write-Host ""
 
-# Open HTML report
 Write-Host "Opening HTML report..." -ForegroundColor Yellow
 try {
     Start-Process $htmlReportPath
