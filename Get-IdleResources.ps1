@@ -4,7 +4,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$false)]
-    [string]$PrioritySubscriptionId = "7EDFB9F6-940E-47CD-AF4B-04D0B6E6020F",
+    [string[]]$PrioritySubscriptionIds = @(
+        "7EDFB9F6-940E-47CD-AF4B-04D0B6E6020F",
+        "977e4f83-3649-428b-9416-cf9adfe24cec"
+    ),
     
     [Parameter(Mandatory=$false)]
     [string]$OutputPath = ".\Reports"
