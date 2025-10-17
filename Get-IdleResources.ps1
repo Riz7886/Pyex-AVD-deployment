@@ -47,9 +47,56 @@ function Get-EstimatedMonthlyCost {
         [string]$Size
     )
     
+    $cost = 0
+    
     switch -Wildcard ($ResourceType) {
         "VM" {
             switch -Wildcard ($SKU) {
+                "*D4*" { $cost = 150 }
+                "*D2*" { $cost = 75 }
+                "*B4*" { $cost = 130 }
+                "*B2*" { $cost = 50 }
+                "*E*" { $cost = 200 }
+                "*F*" { $cost = 100 }
+                "*Standard*" { $cost = 80 }
+                default { $cost = 60 }
+            }
+        }
+        "Disk" {
+            $sizeGB = 128
+            if ($Size -match "(\d+)\s*GB") {
+                $sizeGB = [int]$Matches[1]
+            }
+            if ($SKU -match "Premium") { 
+                $cost = [math]::Max([math]::Round(($sizeGB * 0.15), 2), 15)
+            }
+            elseif ($SKU -match "StandardSSD") { 
+                $cost = [math]::Max([math]::Round(($sizeGB * 0.08), 2), 8)
+            }
+            else {
+                $cost = [math]::Max([math]::Round(($sizeGB * 0.05), 2), 5)
+            }
+        }
+        "PublicIP" { $cost = 4 }
+        "NIC" { $cost = 2 }
+        "LoadBalancer" { $cost = 25 }
+        "Storage" {
+            if ($SKU -match "Premium") { $cost = 15 }
+            elseif ($SKU -match "GRS") { $cost = 8 }
+            else { $cost = 5 }
+        }
+        "AppServicePlan" {
+            if ($SKU -match "Premium") { $cost = 150 }
+            elseif ($SKU -match "Standard") { $cost = 75 }
+            else { $cost = 55 }
+        }
+        "SQL" { $cost = 100 }
+        "Resource Group" { $cost = 0 }
+        default { $cost = 15 }
+    }
+    
+    return $cost
+}U) {
                 "*D4*" { return 150 }
                 "*D2*" { return 75 }
                 "*B4*" { return 130 }
@@ -536,13 +583,21 @@ Write-Host "  Total Resources Scanned: $($summary.TotalResourcesScanned)" -Foreg
 Write-Host "  Total Idle Resources: $($summary.TotalIdleResources)" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Cost Summary:" -ForegroundColor Yellow
-Write-Host "  Monthly Savings: `$$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
-Write-Host "  Annual Savings: `$$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Green
+Write-Host "  Monthly Savings: $" -NoNewline -ForegroundColor White
+Write-Host "$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
+Write-Host "  Annual Savings: $" -NoNewline -ForegroundColor White  
+Write-Host "$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Green
 Write-Host ""
 
 if ($allIdleResources.Count -gt 0) {
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
-    $allIdleResources | Export-Csv -Path $detailedReportPath -NoTypeInformation
+    
+    $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
+        @{Name="EstimatedMonthlyCost";Expression={"$" + $_.EstimatedMonthlyCost}}, 
+        @{Name="EstimatedAnnualCost";Expression={"$" + $_.EstimatedAnnualCost}}, 
+        Reason, Recommendation, Tags
+    
+    $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Encoding UTF8
     Write-Host "Detailed Report: $detailedReportPath" -ForegroundColor Green
     
     $summaryReportPath = Join-Path $OutputPath "IdleResources-Summary-$timestamp.json"
@@ -741,11 +796,11 @@ if ($allIdleResources.Count -gt 0) {
     
     Write-Host ""
     Write-Host "Top 10 Costliest Idle Resources:" -ForegroundColor Cyan
-    $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 10 | Format-Table -Property SubscriptionName, ResourceType, ResourceName, @{Name="Monthly";Expression={"`$$($_.EstimatedMonthlyCost)"}}, Recommendation -AutoSize
+    $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 10 | Format-Table -Property SubscriptionName, ResourceType, ResourceName, @{Name="Monthly";Expression={"$" + $_.EstimatedMonthlyCost}}, Recommendation -AutoSize
     
     Write-Host ""
     Write-Host "By Resource Type:" -ForegroundColor Cyan
-    $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="Monthly";Expression={"`$$([math]::Round(($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2))"}} | Sort-Object -Property Count -Descending | Format-Table -AutoSize
+    $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="Monthly";Expression={"$" + [math]::Round(($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2)}} | Sort-Object -Property Count -Descending | Format-Table -AutoSize
     
 } else {
     Write-Host "No idle resources found!" -ForegroundColor Green
