@@ -618,7 +618,7 @@ if ($allIdleResources.Count -gt 0) {
     [void]$html.Append("</table><h2>Breakdown by Subscription</h2><table><tr><th>Subscription Name</th><th>Resources Scanned</th><th>Idle Resources</th><th>Monthly Cost</th><th>Annual Cost</th></tr>")
     
     foreach ($sub in ($summary.SubscriptionDetails | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
-        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>`$($sub.EstimatedMonthlyCost)</td><td class='cost'>`$($sub.EstimatedAnnualCost)</td></tr>")
+        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>$" + $sub.EstimatedMonthlyCost + "</td><td class='cost'>$" + $sub.EstimatedAnnualCost + "</td></tr>")
     }
     
     [void]$html.Append("</table><div class='summary' style='margin-top:30px;background-color:#e8f5e9'><h2 style='color:#2e7d32'>TOTAL SAVINGS SUMMARY</h2>")
