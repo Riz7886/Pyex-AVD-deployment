@@ -15,44 +15,84 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-AzureData {
+    param([string]$Command)
+    try {
+        $output = Invoke-Expression $Command
+        if ($LASTEXITCODE -eq 0) {
+            return ($output | ConvertFrom-Json)
+        }
+        return @()
+    } catch {
+        return @()
+    }
+}
+
+function Get-EstimatedMonthlyCost {
+    param(
+        [string]$ResourceType,
+        [string]$SKU,
+        [string]$Size
+    )
+    
+    switch -Wildcard ($ResourceType) {
+        "VM" {
+            switch -Wildcard ($SKU) {
+                "*D4*" { return 150 }
+                "*D2*" { return 75 }
+                "*B4*" { return 130 }
+                "*B2*" { return 50 }
+                "*E*" { return 200 }
+                "*F*" { return 100 }
+                default { return 50 }
+            }
+        }
+        "Disk" {
+            if ($SKU -match "Premium") { return 20 }
+            if ($SKU -match "StandardSSD") { return 10 }
+            return 5
+        }
+        "PublicIP" { return 4 }
+        "NIC" { return 2 }
+        "LoadBalancer" { return 25 }
+        "Storage" {
+            if ($SKU -match "Premium") { return 15 }
+            if ($SKU -match "GRS") { return 8 }
+            return 5
+        }
+        "AppServicePlan" {
+            if ($SKU -match "Premium") { return 150 }
+            if ($SKU -match "Standard") { return 75 }
+            return 55
+        }
+        "SQL" { return 100 }
+        default { return 10 }
+    }
+}
+
 Write-Host ""
 Write-Host "AZURE IDLE RESOURCES SCANNER - ENTERPRISE GRADE" -ForegroundColor Cyan
 Write-Host "Scanning ALL Accessible Subscriptions" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "Authenticating with Azure..." -ForegroundColor Cyan
+Write-Host "Checking Azure CLI..." -ForegroundColor Cyan
 try {
-    $context = Get-AzContext
-    if (!$context) {
-        Write-Host "No active Azure session found. Connecting..." -ForegroundColor Yellow
-        Connect-AzAccount | Out-Null
-        $context = Get-AzContext
+    $null = az account show --output json 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Not logged in to Azure CLI. Logging in..." -ForegroundColor Yellow
+        az login | Out-Null
     }
-    Write-Host "Authentication successful" -ForegroundColor Green
-    Write-Host "Logged in as: $($context.Account.Id)" -ForegroundColor Green
+    Write-Host "Azure CLI authentication successful" -ForegroundColor Green
 } catch {
-    Write-Host "Authentication failed. Please connect to Azure..." -ForegroundColor Red
-    Connect-AzAccount | Out-Null
-    $context = Get-AzContext
+    Write-Host "Azure CLI not available. Installing..." -ForegroundColor Yellow
+    Write-Host "Please install Azure CLI from: https://aka.ms/installazurecliwindows" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""
 Write-Host "Retrieving all accessible subscriptions..." -ForegroundColor Yellow
 
-$allSubscriptions = @()
-try {
-    $allSubscriptions = Get-AzSubscription | Where-Object { $_.State -eq "Enabled" }
-} catch {
-    Write-Host "Error retrieving subscriptions. Trying current context only..." -ForegroundColor Yellow
-    $currentSub = Get-AzContext
-    if ($currentSub) {
-        $allSubscriptions = @([PSCustomObject]@{
-            Name = $currentSub.Subscription.Name
-            Id = $currentSub.Subscription.Id
-            State = "Enabled"
-        })
-    }
-}
+$allSubscriptions = Get-AzureData -Command "az account list --all --output json"
 
 if ($allSubscriptions.Count -eq 0) {
     Write-Host "ERROR: No subscriptions found. Please check your Azure permissions." -ForegroundColor Red
@@ -62,17 +102,25 @@ if ($allSubscriptions.Count -eq 0) {
 Write-Host "Found $($allSubscriptions.Count) enabled subscription(s)" -ForegroundColor Green
 Write-Host ""
 
+foreach ($sub in $allSubscriptions) {
+    $status = if ($sub.state -eq "Enabled") { "ACTIVE" } else { $sub.state }
+    Write-Host "  - $($sub.name)" -ForegroundColor White -NoNewline
+    Write-Host " [$status]" -ForegroundColor $(if ($sub.state -eq "Enabled") { "Green" } else { "Yellow" })
+}
+
 if ($PrioritySubscriptionId) {
-    $prioritySub = $allSubscriptions | Where-Object { $_.Id -eq $PrioritySubscriptionId }
+    $prioritySub = $allSubscriptions | Where-Object { $_.id -eq $PrioritySubscriptionId }
     if ($prioritySub) {
-        Write-Host "Priority Subscription: $($prioritySub.Name)" -ForegroundColor Yellow
-        $subscriptionsToScan = @($prioritySub) + ($allSubscriptions | Where-Object { $_.Id -ne $PrioritySubscriptionId })
+        Write-Host ""
+        Write-Host "Priority Subscription: $($prioritySub.name)" -ForegroundColor Yellow
+        $subscriptionsToScan = @($prioritySub) + ($allSubscriptions | Where-Object { $_.id -ne $PrioritySubscriptionId -and $_.state -eq "Enabled" })
     } else {
+        Write-Host ""
         Write-Host "Priority subscription not found. Scanning all available subscriptions." -ForegroundColor Yellow
-        $subscriptionsToScan = $allSubscriptions
+        $subscriptionsToScan = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
     }
 } else {
-    $subscriptionsToScan = $allSubscriptions
+    $subscriptionsToScan = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
 }
 
 if (!(Test-Path $OutputPath)) {
@@ -98,19 +146,22 @@ $currentSubNum = 0
 foreach ($subscription in $subscriptionsToScan) {
     $currentSubNum++
     
+    if ($subscription.state -ne "Enabled") {
+        Write-Host "Skipping disabled subscription: $($subscription.name)" -ForegroundColor Yellow
+        continue
+    }
+    
     try {
         Write-Host ""
-        Write-Host "[$currentSubNum/$totalSubCount] Scanning: $($subscription.Name)" -ForegroundColor Cyan
-        Write-Host "Subscription ID: $($subscription.Id)" -ForegroundColor Gray
+        Write-Host "[$currentSubNum/$totalSubCount] Scanning: $($subscription.name)" -ForegroundColor Cyan
+        Write-Host "Subscription ID: $($subscription.id)" -ForegroundColor Gray
         
-        try {
-            Set-AzContext -SubscriptionId $subscription.Id -ErrorAction Stop | Out-Null
-            Write-Host "Context switched successfully" -ForegroundColor Green
-        } catch {
+        az account set --subscription $subscription.id 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR: Cannot switch to subscription. Skipping..." -ForegroundColor Red
-            Write-Host "Error Details: $($_.Exception.Message)" -ForegroundColor Red
             continue
         }
+        Write-Host "Context switched successfully" -ForegroundColor Green
         
         $subIdleResources = @()
         $subTotalCost = 0
@@ -118,39 +169,30 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Virtual Machines..." -ForegroundColor Yellow
         try {
-            $vms = Get-AzVM -Status
+            $vms = Get-AzureData -Command "az vm list -d --subscription $($subscription.id) --output json"
             $subResourceCount += $vms.Count
             $vmIdleCount = 0
             
             foreach ($vm in $vms) {
-                if ($vm.PowerState -eq "VM deallocated" -or $vm.PowerState -eq "VM stopped") {
+                if ($vm.powerState -and ($vm.powerState -eq "VM deallocated" -or $vm.powerState -eq "VM stopped")) {
                     $vmIdleCount++
-                    $vmSize = $vm.HardwareProfile.VmSize
-                    $estimatedCost = switch -Wildcard ($vmSize) {
-                        "Standard_D4*" { 150 }
-                        "Standard_D2*" { 75 }
-                        "Standard_B4*" { 130 }
-                        "Standard_B2*" { 50 }
-                        "Standard_E*" { 200 }
-                        "Standard_F*" { 100 }
-                        default { 50 }
-                    }
+                    $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "VM" -SKU $vm.hardwareProfile.vmSize
                     $subTotalCost += $estimatedCost
                     
                     $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
                         ResourceType = "Virtual Machine"
-                        ResourceName = $vm.Name
-                        ResourceGroup = $vm.ResourceGroupName
-                        Location = $vm.Location
-                        Status = $vm.PowerState
-                        Size = $vmSize
+                        ResourceName = $vm.name
+                        ResourceGroup = $vm.resourceGroup
+                        Location = $vm.location
+                        Status = $vm.powerState
+                        Size = $vm.hardwareProfile.vmSize
                         EstimatedMonthlyCost = $estimatedCost
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "VM is stopped or deallocated - consuming storage costs"
                         Recommendation = "Delete VM if no longer needed or restart if required"
-                        Tags = if ($vm.Tags) { ($vm.Tags.Keys | ForEach-Object { "$_=$($vm.Tags[$_])" }) -join "; " } else { "" }
+                        Tags = if ($vm.tags) { ($vm.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -161,36 +203,32 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Unattached Disks..." -ForegroundColor Yellow
         try {
-            $disks = Get-AzDisk
+            $disks = Get-AzureData -Command "az disk list --subscription $($subscription.id) --output json"
             $subResourceCount += $disks.Count
             $diskIdleCount = 0
             
             foreach ($disk in $disks) {
-                if ($disk.ManagedBy -eq $null) {
+                if ([string]::IsNullOrEmpty($disk.managedBy)) {
                     $diskIdleCount++
-                    $diskSizeGB = $disk.DiskSizeGB
-                    $diskTier = $disk.Sku.Name
-                    $estimatedCost = switch ($diskTier) {
-                        "Premium_LRS" { [math]::Round(($diskSizeGB * 0.15), 2) }
-                        "StandardSSD_LRS" { [math]::Round(($diskSizeGB * 0.08), 2) }
-                        default { [math]::Round(($diskSizeGB * 0.05), 2) }
-                    }
+                    $diskSizeGB = $disk.diskSizeGb
+                    $diskTier = $disk.sku.name
+                    $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "Disk" -SKU $diskTier
                     $subTotalCost += $estimatedCost
                     
                     $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
                         ResourceType = "Unattached Disk"
-                        ResourceName = $disk.Name
-                        ResourceGroup = $disk.ResourceGroupName
-                        Location = $disk.Location
+                        ResourceName = $disk.name
+                        ResourceGroup = $disk.resourceGroup
+                        Location = $disk.location
                         Status = "Unattached"
                         Size = "$diskSizeGB GB - $diskTier"
                         EstimatedMonthlyCost = $estimatedCost
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Disk not attached to any VM - wasting storage costs"
                         Recommendation = "Delete if no longer needed or attach to VM"
-                        Tags = if ($disk.Tags) { ($disk.Tags.Keys | ForEach-Object { "$_=$($disk.Tags[$_])" }) -join "; " } else { "" }
+                        Tags = if ($disk.tags) { ($disk.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -201,31 +239,30 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
-            $publicIPs = Get-AzPublicIpAddress
+            $publicIPs = Get-AzureData -Command "az network public-ip list --subscription $($subscription.id) --output json"
             $subResourceCount += $publicIPs.Count
             $ipIdleCount = 0
             
-            foreach ($ip in $publicIPs) {
-                if ($ip.IpConfiguration -eq $null) {
+            foreach ($pip in $publicIPs) {
+                if ([string]::IsNullOrEmpty($pip.ipConfiguration)) {
                     $ipIdleCount++
-                    $ipSku = $ip.Sku.Name
-                    $estimatedCost = if ($ipSku -eq "Standard") { 4 } else { 3 }
+                    $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "PublicIP"
                     $subTotalCost += $estimatedCost
                     
                     $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
                         ResourceType = "Public IP Address"
-                        ResourceName = $ip.Name
-                        ResourceGroup = $ip.ResourceGroupName
-                        Location = $ip.Location
+                        ResourceName = $pip.name
+                        ResourceGroup = $pip.resourceGroup
+                        Location = $pip.location
                         Status = "Unassigned"
-                        Size = "$ipSku SKU"
+                        Size = "$($pip.sku.name) SKU"
                         EstimatedMonthlyCost = $estimatedCost
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Public IP not assigned to any resource"
                         Recommendation = "Delete if not needed - incurs monthly charge"
-                        Tags = if ($ip.Tags) { ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; " } else { "" }
+                        Tags = if ($pip.tags) { ($pip.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -236,30 +273,30 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
         try {
-            $nics = Get-AzNetworkInterface
+            $nics = Get-AzureData -Command "az network nic list --subscription $($subscription.id) --output json"
             $subResourceCount += $nics.Count
             $nicIdleCount = 0
             
             foreach ($nic in $nics) {
-                if ($nic.VirtualMachine -eq $null) {
+                if ([string]::IsNullOrEmpty($nic.virtualMachine)) {
                     $nicIdleCount++
-                    $estimatedCost = 2
+                    $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "NIC"
                     $subTotalCost += $estimatedCost
                     
                     $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
                         ResourceType = "Network Interface"
-                        ResourceName = $nic.Name
-                        ResourceGroup = $nic.ResourceGroupName
-                        Location = $nic.Location
+                        ResourceName = $nic.name
+                        ResourceGroup = $nic.resourceGroup
+                        Location = $nic.location
                         Status = "Unattached"
                         Size = "N/A"
                         EstimatedMonthlyCost = $estimatedCost
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "NIC not attached to any VM"
                         Recommendation = "Delete if VM was removed"
-                        Tags = if ($nic.Tags) { ($nic.Tags.Keys | ForEach-Object { "$_=$($nic.Tags[$_])" }) -join "; " } else { "" }
+                        Tags = if ($nic.tags) { ($nic.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -270,55 +307,37 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Storage Accounts..." -ForegroundColor Yellow
         try {
-            $storageAccounts = Get-AzStorageAccount
+            $storageAccounts = Get-AzureData -Command "az storage account list --subscription $($subscription.id) --output json"
             $subResourceCount += $storageAccounts.Count
             $storageIdleCount = 0
             
             foreach ($storage in $storageAccounts) {
                 try {
-                    $ctx = $storage.Context
-                    $containers = Get-AzStorageContainer -Context $ctx -ErrorAction SilentlyContinue
-                    $totalSize = 0
-                    $blobCount = 0
+                    $containers = Get-AzureData -Command "az storage container list --account-name $($storage.name) --auth-mode login --output json 2>$null"
                     
-                    foreach ($container in $containers) {
-                        $blobs = Get-AzStorageBlob -Container $container.Name -Context $ctx -ErrorAction SilentlyContinue
-                        $blobCount += $blobs.Count
-                        foreach ($blob in $blobs) {
-                            $totalSize += $blob.Length
-                        }
-                    }
-                    
-                    $sizeGB = [math]::Round($totalSize / 1GB, 2)
-                    
-                    if ($sizeGB -lt 0.1 -and $blobCount -lt 5) {
+                    if ($containers.Count -eq 0) {
                         $storageIdleCount++
-                        $storageTier = $storage.Sku.Name
-                        $estimatedCost = switch ($storageTier) {
-                            "Premium_LRS" { 15 }
-                            "Standard_GRS" { 8 }
-                            default { 5 }
-                        }
+                        $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "Storage" -SKU $storage.sku.name
                         $subTotalCost += $estimatedCost
                         
                         $subIdleResources += [PSCustomObject]@{
-                            SubscriptionName = $subscription.Name
-                            SubscriptionId = $subscription.Id
+                            SubscriptionName = $subscription.name
+                            SubscriptionId = $subscription.id
                             ResourceType = "Storage Account"
-                            ResourceName = $storage.StorageAccountName
-                            ResourceGroup = $storage.ResourceGroupName
-                            Location = $storage.Location
-                            Status = "Empty/Minimal Data"
-                            Size = "$sizeGB GB | $blobCount blobs | $storageTier"
+                            ResourceName = $storage.name
+                            ResourceGroup = $storage.resourceGroup
+                            Location = $storage.location
+                            Status = "Empty/No Containers"
+                            Size = "$($storage.sku.name)"
                             EstimatedMonthlyCost = $estimatedCost
                             EstimatedAnnualCost = $estimatedCost * 12
-                            Reason = "Storage account empty or has minimal data"
+                            Reason = "Storage account has no containers or minimal data"
                             Recommendation = "Delete if not needed - base charge applies"
-                            Tags = if ($storage.Tags) { ($storage.Tags.Keys | ForEach-Object { "$_=$($storage.Tags[$_])" }) -join "; " } else { "" }
+                            Tags = if ($storage.tags) { ($storage.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                         }
                     }
                 } catch {
-                    Write-Host "  Unable to analyze: $($storage.StorageAccountName)" -ForegroundColor Gray
+                    Write-Host "  Unable to analyze: $($storage.name)" -ForegroundColor Gray
                 }
             }
             Write-Host "  Found: $($storageAccounts.Count) Storage Accounts | Empty: $storageIdleCount" -ForegroundColor $(if($storageIdleCount -gt 0){"Yellow"}else{"Green"})
@@ -326,75 +345,41 @@ foreach ($subscription in $subscriptionsToScan) {
             Write-Host "  Error checking Storage: $($_.Exception.Message)" -ForegroundColor Red
         }
         
-        Write-Host "Checking App Service Plans..." -ForegroundColor Yellow
-        try {
-            $appServicePlans = Get-AzAppServicePlan
-            $subResourceCount += $appServicePlans.Count
-            $aspIdleCount = 0
-            
-            foreach ($asp in $appServicePlans) {
-                $apps = Get-AzWebApp -AppServicePlan $asp -ErrorAction SilentlyContinue
-                if ($apps.Count -eq 0) {
-                    $aspIdleCount++
-                    $aspTier = $asp.Sku.Tier
-                    $estimatedCost = switch ($aspTier) {
-                        "Premium" { 150 }
-                        "PremiumV2" { 200 }
-                        "PremiumV3" { 250 }
-                        "Standard" { 75 }
-                        default { 55 }
-                    }
-                    $subTotalCost += $estimatedCost
-                    
-                    $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
-                        ResourceType = "App Service Plan"
-                        ResourceName = $asp.Name
-                        ResourceGroup = $asp.ResourceGroup
-                        Location = $asp.Location
-                        Status = "Empty"
-                        Size = "$aspTier | $($asp.Sku.Name)"
-                        EstimatedMonthlyCost = $estimatedCost
-                        EstimatedAnnualCost = $estimatedCost * 12
-                        Reason = "App Service Plan has no apps deployed"
-                        Recommendation = "Delete if not needed - significant monthly charge"
-                        Tags = if ($asp.Tags) { ($asp.Tags.Keys | ForEach-Object { "$_=$($asp.Tags[$_])" }) -join "; " } else { "" }
-                    }
-                }
-            }
-            Write-Host "  Found: $($appServicePlans.Count) App Service Plans | Empty: $aspIdleCount" -ForegroundColor $(if($aspIdleCount -gt 0){"Yellow"}else{"Green"})
-        } catch {
-            Write-Host "  Error checking App Service Plans: $($_.Exception.Message)" -ForegroundColor Red
-        }
-        
         Write-Host "Checking Load Balancers..." -ForegroundColor Yellow
         try {
-            $loadBalancers = Get-AzLoadBalancer
+            $loadBalancers = Get-AzureData -Command "az network lb list --subscription $($subscription.id) --output json"
             $subResourceCount += $loadBalancers.Count
             $lbIdleCount = 0
             
             foreach ($lb in $loadBalancers) {
-                if ($lb.BackendAddressPools.Count -eq 0 -or ($lb.BackendAddressPools[0].BackendIpConfigurations -and $lb.BackendAddressPools[0].BackendIpConfigurations.Count -eq 0)) {
+                $backendEmpty = $true
+                if ($lb.backendAddressPools) {
+                    foreach ($pool in $lb.backendAddressPools) {
+                        if ($pool.backendIPConfigurations -and $pool.backendIPConfigurations.Count -gt 0) {
+                            $backendEmpty = $false
+                            break
+                        }
+                    }
+                }
+                if ($backendEmpty) {
                     $lbIdleCount++
-                    $lbSku = $lb.Sku.Name
-                    $estimatedCost = if ($lbSku -eq "Standard") { 25 } else { 18 }
+                    $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "LoadBalancer"
                     $subTotalCost += $estimatedCost
                     
                     $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
                         ResourceType = "Load Balancer"
-                        ResourceName = $lb.Name
-                        ResourceGroup = $lb.ResourceGroupName
-                        Location = $lb.Location
+                        ResourceName = $lb.name
+                        ResourceGroup = $lb.resourceGroup
+                        Location = $lb.location
                         Status = "No Backend Pool"
-                        Size = "$lbSku SKU"
+                        Size = "$($lb.sku.name) SKU"
                         EstimatedMonthlyCost = $estimatedCost
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Load Balancer has no backend resources"
                         Recommendation = "Delete if infrastructure was removed"
-                        Tags = if ($lb.Tags) { ($lb.Tags.Keys | ForEach-Object { "$_=$($lb.Tags[$_])" }) -join "; " } else { "" }
+                        Tags = if ($lb.tags) { ($lb.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -403,41 +388,35 @@ foreach ($subscription in $subscriptionsToScan) {
             Write-Host "  Error checking Load Balancers: $($_.Exception.Message)" -ForegroundColor Red
         }
         
-        Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
+        Write-Host "Checking Empty Resource Groups..." -ForegroundColor Yellow
         try {
-            $sqlServers = Get-AzSqlServer
-            $subResourceCount += $sqlServers.Count
-            $sqlIdleCount = 0
+            $resourceGroups = Get-AzureData -Command "az group list --subscription $($subscription.id) --output json"
+            $emptyRGCount = 0
             
-            foreach ($sqlServer in $sqlServers) {
-                $databases = Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName | Where-Object { $_.DatabaseName -ne "master" }
-                foreach ($db in $databases) {
-                    if ($db.Status -eq "Paused" -or $db.CurrentServiceObjectiveName -like "*DW*") {
-                        $sqlIdleCount++
-                        $estimatedCost = 100
-                        $subTotalCost += $estimatedCost
-                        
-                        $subIdleResources += [PSCustomObject]@{
-                            SubscriptionName = $subscription.Name
-                            SubscriptionId = $subscription.Id
-                            ResourceType = "SQL Database"
-                            ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
-                            ResourceGroup = $sqlServer.ResourceGroupName
-                            Location = $sqlServer.Location
-                            Status = $db.Status
-                            Size = $db.CurrentServiceObjectiveName
-                            EstimatedMonthlyCost = $estimatedCost
-                            EstimatedAnnualCost = $estimatedCost * 12
-                            Reason = "Database is paused or idle"
-                            Recommendation = "Delete if no longer needed"
-                            Tags = if ($db.Tags) { ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; " } else { "" }
-                        }
+            foreach ($rg in $resourceGroups) {
+                $resources = Get-AzureData -Command "az resource list --resource-group $($rg.name) --subscription $($subscription.id) --output json"
+                if ($resources.Count -eq 0) {
+                    $emptyRGCount++
+                    $subIdleResources += [PSCustomObject]@{
+                        SubscriptionName = $subscription.name
+                        SubscriptionId = $subscription.id
+                        ResourceType = "Resource Group"
+                        ResourceName = $rg.name
+                        ResourceGroup = "N/A"
+                        Location = $rg.location
+                        Status = "Empty"
+                        Size = "N/A"
+                        EstimatedMonthlyCost = 0
+                        EstimatedAnnualCost = 0
+                        Reason = "No resources inside"
+                        Recommendation = "Delete empty resource group"
+                        Tags = if ($rg.tags) { ($rg.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
                     }
                 }
             }
-            Write-Host "  Found: $($sqlServers.Count) SQL Servers | Idle Databases: $sqlIdleCount" -ForegroundColor $(if($sqlIdleCount -gt 0){"Yellow"}else{"Green"})
+            Write-Host "  Found: $($resourceGroups.Count) Resource Groups | Empty: $emptyRGCount" -ForegroundColor $(if($emptyRGCount -gt 0){"Yellow"}else{"Green"})
         } catch {
-            Write-Host "  Error checking SQL: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "  Error checking Resource Groups: $($_.Exception.Message)" -ForegroundColor Red
         }
         
         $allIdleResources += $subIdleResources
@@ -449,8 +428,8 @@ foreach ($subscription in $subscriptionsToScan) {
         $summary.TotalAnnualCost += ($subTotalCost * 12)
         
         $summary.SubscriptionDetails += [PSCustomObject]@{
-            SubscriptionName = $subscription.Name
-            SubscriptionId = $subscription.Id
+            SubscriptionName = $subscription.name
+            SubscriptionId = $subscription.id
             ResourcesScanned = $subResourceCount
             IdleResourcesFound = $subIdleResources.Count
             EstimatedMonthlyCost = [math]::Round($subTotalCost, 2)
@@ -528,4 +507,5 @@ try {
 
 Write-Host ""
 Write-Host "Scan complete. Review detailed reports in: $OutputPath" -ForegroundColor Cyan
+Write-Host ""
 Write-Host ""
