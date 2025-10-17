@@ -10,7 +10,10 @@ param(
     ),
     
     [Parameter(Mandatory=$false)]
-    [string]$OutputPath = ".\Reports"
+    [string]$OutputPath = ".\Reports",
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$ScanAllTenants
 )
 
 $ErrorActionPreference = "Continue"
@@ -119,7 +122,7 @@ function Test-SubscriptionAccess {
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  AZURE IDLE RESOURCES SCANNER - SMART PERMISSION DETECTION" -ForegroundColor Cyan
+Write-Host "  AZURE IDLE RESOURCES SCANNER - MULTI-TENANT SUPPORT" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -140,15 +143,51 @@ try {
 }
 
 Write-Host ""
-Write-Host "Step 2: Discovering ALL Subscriptions..." -ForegroundColor Yellow
-$allSubscriptions = Get-AzureData -Command "az account list --all --output json"
+Write-Host "Step 2: Discovering ALL Tenants and Subscriptions..." -ForegroundColor Yellow
+
+$allTenants = @()
+if ($ScanAllTenants) {
+    Write-Host "  Multi-Tenant Mode: Enabled" -ForegroundColor Cyan
+    $tenantList = az account tenant list --output json 2>$null | ConvertFrom-Json
+    if ($tenantList -and $tenantList.Count -gt 0) {
+        Write-Host "  Found $($tenantList.Count) tenant(s)" -ForegroundColor Green
+        foreach ($tenant in $tenantList) {
+            Write-Host "    - Tenant: $($tenant.displayName) [$($tenant.tenantId)]" -ForegroundColor White
+            $allTenants += $tenant
+        }
+    } else {
+        Write-Host "  Only one tenant accessible" -ForegroundColor Yellow
+        $allTenants += @{tenantId = $currentAccount.tenantId; displayName = "Current Tenant"}
+    }
+} else {
+    Write-Host "  Single-Tenant Mode: Scanning current tenant only" -ForegroundColor Yellow
+    Write-Host "  TIP: Use -ScanAllTenants switch to scan all accessible tenants" -ForegroundColor Gray
+    $allTenants += @{tenantId = $currentAccount.tenantId; displayName = "Current Tenant"}
+}
+
+$allSubscriptions = @()
+foreach ($tenant in $allTenants) {
+    Write-Host ""
+    Write-Host "  Connecting to Tenant: $($tenant.displayName)" -ForegroundColor Cyan
+    
+    $tenantSubs = Get-AzureData -Command "az account list --all --output json"
+    
+    if ($tenantSubs.Count -gt 0) {
+        Write-Host "    Found $($tenantSubs.Count) subscription(s) in this tenant" -ForegroundColor Green
+        $allSubscriptions += $tenantSubs
+    } else {
+        Write-Host "    No subscriptions found in this tenant" -ForegroundColor Yellow
+    }
+}
 
 if ($allSubscriptions.Count -eq 0) {
-    Write-Host "ERROR: No subscriptions found" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "ERROR: No subscriptions found in any tenant" -ForegroundColor Red
     exit 1
 }
 
-Write-Host "  Found $($allSubscriptions.Count) subscription(s)" -ForegroundColor Green
+Write-Host ""
+Write-Host "TOTAL: Found $($allSubscriptions.Count) subscription(s) across all tenants" -ForegroundColor Green
 Write-Host ""
 
 $enabledSubs = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
