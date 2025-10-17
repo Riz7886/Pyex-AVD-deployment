@@ -60,9 +60,17 @@ function Get-EstimatedMonthlyCost {
             }
         }
         "Disk" {
-            if ($SKU -match "Premium") { return 20 }
-            if ($SKU -match "StandardSSD") { return 10 }
-            return 5
+            $sizeGB = 0
+            if ($Size -match "(\d+)\s*GB") {
+                $sizeGB = [int]$Matches[1]
+            }
+            if ($SKU -match "Premium") { 
+                return [math]::Round(($sizeGB * 0.15), 2)
+            }
+            if ($SKU -match "StandardSSD") { 
+                return [math]::Round(($sizeGB * 0.08), 2)
+            }
+            return [math]::Round(($sizeGB * 0.05), 2)
         }
         "PublicIP" { return 4 }
         "NIC" { return 2 }
@@ -137,14 +145,68 @@ if ($allSubscriptions.Count -eq 0) {
     exit 1
 }
 
-Write-Host "  Found $($allSubscriptions.Count) subscription(s)" -ForegroundColor Green
+Write-Host "  Found $($allSubscriptions.Count) subscription(s) in current tenant" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "Step 2b: Checking for subscriptions in PYX Health tenant..." -ForegroundColor Yellow
+
+$missingSubscriptions = @()
+foreach ($priorityId in $PrioritySubscriptionIds) {
+    $found = $allSubscriptions | Where-Object { $_.id -eq $priorityId }
+    if (-not $found) {
+        $missingSubscriptions += $priorityId
+        Write-Host "  Missing subscription: $priorityId" -ForegroundColor Red
+    }
+}
+
+if ($missingSubscriptions.Count -gt 0) {
+    Write-Host ""
+    Write-Host "IMPORTANT: Some priority subscriptions are in a different tenant (PYX Health)" -ForegroundColor Yellow
+    Write-Host "Attempting to access PYX Health tenant subscriptions..." -ForegroundColor Yellow
+    
+    foreach ($missingId in $missingSubscriptions) {
+        try {
+            Write-Host "  Trying to access subscription: $missingId" -ForegroundColor Gray
+            az account set --subscription $missingId 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $subInfo = Get-AzureData -Command "az account show --subscription $missingId --output json"
+                if ($subInfo) {
+                    Write-Host "  Successfully accessed: $($subInfo.name)" -ForegroundColor Green
+                    $allSubscriptions += $subInfo
+                }
+            } else {
+                Write-Host "  Cannot access subscription $missingId - may need to login to PYX Health tenant" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "  Failed to access: $missingId" -ForegroundColor Red
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "Total subscriptions available: $($allSubscriptions.Count)" -ForegroundColor Green
 Write-Host ""
 
 $enabledSubs = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
-Write-Host "Subscriptions Available:" -ForegroundColor Cyan
+Write-Host "All Available Subscriptions:" -ForegroundColor Cyan
 foreach ($sub in $enabledSubs) {
-    Write-Host "  - $($sub.name)" -ForegroundColor White -NoNewline
+    $tenantInfo = if ($sub.tenantId) { " (Tenant: $($sub.tenantId))" } else { "" }
+    Write-Host "  - $($sub.name)$tenantInfo" -ForegroundColor White -NoNewline
     Write-Host " [$($sub.state)]" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "Checking if PYX Health subscriptions are in the list..." -ForegroundColor Yellow
+foreach ($priorityId in $PrioritySubscriptionIds) {
+    $found = $allSubscriptions | Where-Object { $_.id -eq $priorityId }
+    if ($found) {
+        Write-Host "  ✓ Found: $($found.name) - $priorityId" -ForegroundColor Green
+    } else {
+        Write-Host "  ✗ NOT FOUND: $priorityId" -ForegroundColor Red
+        Write-Host "    This subscription is in PYX Health tenant - you may need to:" -ForegroundColor Yellow
+        Write-Host "    1. Login to Azure with PYX Health account" -ForegroundColor White
+        Write-Host "    2. Run: az login --tenant <PYX_HEALTH_TENANT_ID>" -ForegroundColor White
+    }
 }
 
 Write-Host ""
@@ -205,16 +267,23 @@ if ($accessibleSubscriptions.Count -eq 0) {
 Write-Host ""
 Write-Host "Step 4: Scanning Accessible Subscriptions..." -ForegroundColor Yellow
 
-if ($PrioritySubscriptionId) {
-    $prioritySub = $accessibleSubscriptions | Where-Object { $_.id -eq $PrioritySubscriptionId }
-    if ($prioritySub) {
-        Write-Host "  Priority Subscription: $($prioritySub.name)" -ForegroundColor Cyan
-        $subscriptionsToScan = @($prioritySub) + ($accessibleSubscriptions | Where-Object { $_.id -ne $PrioritySubscriptionId })
+$prioritySubscriptions = @()
+$otherSubscriptions = @()
+
+foreach ($sub in $accessibleSubscriptions) {
+    if ($PrioritySubscriptionIds -contains $sub.id) {
+        $prioritySubscriptions += $sub
+        Write-Host "  Priority Subscription Found: $($sub.name)" -ForegroundColor Cyan
     } else {
-        Write-Host "  Priority subscription not accessible. Scanning all available." -ForegroundColor Yellow
-        $subscriptionsToScan = $accessibleSubscriptions
+        $otherSubscriptions += $sub
     }
+}
+
+if ($prioritySubscriptions.Count -gt 0) {
+    Write-Host "  Scanning $($prioritySubscriptions.Count) priority subscription(s) first" -ForegroundColor Yellow
+    $subscriptionsToScan = $prioritySubscriptions + $otherSubscriptions
 } else {
+    Write-Host "  No priority subscriptions found. Scanning all available." -ForegroundColor Yellow
     $subscriptionsToScan = $accessibleSubscriptions
 }
 
@@ -301,7 +370,7 @@ foreach ($subscription in $subscriptionsToScan) {
                 $diskIdleCount++
                 $diskSizeGB = $disk.diskSizeGb
                 $diskTier = $disk.sku.name
-                $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "Disk" -SKU $diskTier
+                $estimatedCost = Get-EstimatedMonthlyCost -ResourceType "Disk" -SKU $diskTier -Size "$diskSizeGB GB"
                 $subTotalCost += $estimatedCost
                 
                 $subIdleResources += [PSCustomObject]@{
@@ -696,6 +765,27 @@ if ($allIdleResources.Count -gt 0) {
 
     $htmlContent += @"
     </table>
+    
+    <div class="summary" style="margin-top: 30px; background-color: #e8f5e9;">
+        <h2 style="color: #2e7d32;">💰 TOTAL SAVINGS SUMMARY</h2>
+        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
+            <span class="summary-label">Total Idle Resources Found:</span> 
+            <span style="color: #d13438; font-size: 24px; font-weight: bold;">$($summary.TotalIdleResources)</span>
+        </div>
+        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
+            <span class="summary-label">Monthly Cost Savings:</span> 
+            <span style="color: #2e7d32; font-size: 28px; font-weight: bold;">`$([math]::Round($summary.TotalMonthlyCost, 2))</span>
+        </div>
+        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
+            <span class="summary-label">Annual Cost Savings:</span> 
+            <span style="color: #2e7d32; font-size: 28px; font-weight: bold;">`$([math]::Round($summary.TotalAnnualCost, 2))</span>
+        </div>
+        <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 5px;">
+            <p style="margin: 0; font-size: 16px; color: #856404;">
+                <strong>💡 Recommendation:</strong> Review these idle resources and delete unused ones to achieve estimated savings of <strong style="color: #2e7d32;">`$([math]::Round($summary.TotalMonthlyCost, 2)) per month</strong> or <strong style="color: #2e7d32;">`$([math]::Round($summary.TotalAnnualCost, 2)) per year</strong>.
+            </p>
+        </div>
+    </div>
 </body>
 </html>
 "@
