@@ -98,8 +98,6 @@ function Get-EstimatedMonthlyCost {
     return $cost
 }
 
-# The previous duplicate or broken code segment starting at line 822 has been removed.
-
 function Test-SubscriptionAccess {
     param([string]$SubscriptionId)
     
@@ -528,6 +526,10 @@ foreach ($subscription in $subscriptionsToScan) {
 
 $summary.ScanEndTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
+# ADD THESE 2 LINES FOR PROPER DOLLAR FORMATTING
+$monthlySavings = [math]::Round($summary.TotalMonthlyCost, 2)
+$annualSavings = [math]::Round($summary.TotalAnnualCost, 2)
+
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  FINAL REPORT" -ForegroundColor Cyan
@@ -547,17 +549,17 @@ Write-Host "  Total Idle Resources: $($summary.TotalIdleResources)" -ForegroundC
 Write-Host ""
 Write-Host "Cost Summary:" -ForegroundColor Yellow
 Write-Host "  Monthly Savings: $" -NoNewline -ForegroundColor White
-Write-Host "$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
+Write-Host "$monthlySavings" -ForegroundColor Green
 Write-Host "  Annual Savings: $" -NoNewline -ForegroundColor White  
-Write-Host "$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Green
+Write-Host "$annualSavings" -ForegroundColor Green
 Write-Host ""
 
 if ($allIdleResources.Count -gt 0) {
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
-        @{Name="EstimatedMonthlyCost";Expression={"$" + $_.EstimatedMonthlyCost}}, 
-        @{Name="EstimatedAnnualCost";Expression={"$" + $_.EstimatedAnnualCost}}, 
+        @{Name="EstimatedMonthlyCost";Expression={"`$$($_.EstimatedMonthlyCost)"}}, 
+        @{Name="EstimatedAnnualCost";Expression={"`$$($_.EstimatedAnnualCost)"}}, 
         Reason, Recommendation, Tags
     
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Encoding UTF8
@@ -614,184 +616,7 @@ if ($allIdleResources.Count -gt 0) {
     
     <div class="summary">
         <h2>Cost Summary</h2>
-        <div class="summary-item"><span class="summary-label">Estimated Monthly Savings:</span> <span class="cost">`$([math]::Round($summary.TotalMonthlyCost, 2))</span></div>
-        <div class="summary-item"><span class="summary-label">Estimated Annual Savings:</span> <span class="cost">`$([math]::Round($summary.TotalAnnualCost, 2))</span></div>
+        <div class="summary-item"><span class="summary-label">Estimated Monthly Savings:</span> <span class="cost">`$monthlySavings</span></div>
+        <div class="summary-item"><span class="summary-label">Estimated Annual Savings:</span> <span class="cost">`$annualSavings</span></div>
     </div>
 "@
-
-    if ($summary.BlockedSubscriptions -gt 0) {
-        $htmlContent += @"
-    <div class="blocked">
-        <h2>Blocked Subscriptions (No Access)</h2>
-        <p>You do not have read permissions on the following subscriptions:</p>
-        <ul>
-"@
-        foreach ($blocked in $summary.BlockedSubscriptionList) {
-            $htmlContent += "            <li>$blocked</li>`n"
-        }
-        $htmlContent += @"
-        </ul>
-        <p><strong>Solution:</strong> Ask your Azure admin to grant 'Reader' role on these subscriptions.</p>
-    </div>
-"@
-    }
-
-    $htmlContent += @"
-    <h2>Idle Resources Details</h2>
-    <table>
-        <tr>
-            <th>Subscription</th>
-            <th>Resource Type</th>
-            <th>Resource Name</th>
-            <th>Resource Group</th>
-            <th>Location</th>
-            <th>Status</th>
-            <th>Size</th>
-            <th>Monthly Cost</th>
-            <th>Annual Cost</th>
-            <th>Recommendation</th>
-        </tr>
-"@
-
-    foreach ($resource in ($allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
-        $htmlContent += @"
-        <tr>
-            <td>$($resource.SubscriptionName)</td>
-            <td>$($resource.ResourceType)</td>
-            <td>$($resource.ResourceName)</td>
-            <td>$($resource.ResourceGroup)</td>
-            <td>$($resource.Location)</td>
-            <td>$($resource.Status)</td>
-            <td>$($resource.Size)</td>
-            <td class="cost">`$($resource.EstimatedMonthlyCost)</td>
-            <td class="cost">`$($resource.EstimatedAnnualCost)</td>
-            <td>$($resource.Recommendation)</td>
-        </tr>
-"@
-    }
-
-    $htmlContent += @"
-    </table>
-    
-    <h2>Breakdown by Resource Type</h2>
-    <table>
-        <tr>
-            <th>Resource Type</th>
-            <th>Count</th>
-            <th>Total Monthly Cost</th>
-            <th>Total Annual Cost</th>
-        </tr>
-"@
-
-    $resourceTypeBreakdown = $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="MonthlyTotal";Expression={($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum}}, @{Name="AnnualTotal";Expression={($_.Group | Measure-Object -Property EstimatedAnnualCost -Sum).Sum}} | Sort-Object -Property MonthlyTotal -Descending
-
-    foreach ($type in $resourceTypeBreakdown) {
-        $htmlContent += @"
-        <tr>
-            <td>$($type.Name)</td>
-            <td>$($type.Count)</td>
-            <td class="cost">`$([math]::Round($type.MonthlyTotal, 2))</td>
-            <td class="cost">`$([math]::Round($type.AnnualTotal, 2))</td>
-        </tr>
-"@
-    }
-
-    $htmlContent += @"
-    </table>
-    
-    <h2>Breakdown by Subscription</h2>
-    <table>
-        <tr>
-            <th>Subscription Name</th>
-            <th>Resources Scanned</th>
-            <th>Idle Resources</th>
-            <th>Monthly Cost</th>
-            <th>Annual Cost</th>
-        </tr>
-"@
-
-    foreach ($sub in ($summary.SubscriptionDetails | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
-        $htmlContent += @"
-        <tr>
-            <td>$($sub.SubscriptionName)</td>
-            <td>$($sub.ResourcesScanned)</td>
-            <td class="warning">$($sub.IdleResourcesFound)</td>
-            <td class="cost">`$($sub.EstimatedMonthlyCost)</td>
-            <td class="cost">`$($sub.EstimatedAnnualCost)</td>
-        </tr>
-"@
-    }
-
-    $htmlContent += @"
-    </table>
-    
-    <div class="summary" style="margin-top: 30px; background-color: #e8f5e9;">
-        <h2 style="color: #2e7d32;">💰 TOTAL SAVINGS SUMMARY</h2>
-        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
-            <span class="summary-label">Total Idle Resources Found:</span> 
-            <span style="color: #d13438; font-size: 24px; font-weight: bold;">$($summary.TotalIdleResources)</span>
-        </div>
-        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
-            <span class="summary-label">Monthly Cost Savings:</span> 
-            <span style="color: #2e7d32; font-size: 28px; font-weight: bold;">`$([math]::Round($summary.TotalMonthlyCost, 2))</span>
-        </div>
-        <div class="summary-item" style="font-size: 20px; margin: 15px 0;">
-            <span class="summary-label">Annual Cost Savings:</span> 
-            <span style="color: #2e7d32; font-size: 28px; font-weight: bold;">`$([math]::Round($summary.TotalAnnualCost, 2))</span>
-        </div>
-        <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 5px;">
-            <p style="margin: 0; font-size: 16px; color: #856404;">
-                <strong>💡 Recommendation:</strong> Review these idle resources and delete unused ones to achieve estimated savings of <strong style="color: #2e7d32;">`$([math]::Round($summary.TotalMonthlyCost, 2)) per month</strong> or <strong style="color: #2e7d32;">`$([math]::Round($summary.TotalAnnualCost, 2)) per year</strong>.
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-"@
-
-    $htmlContent | Out-File -FilePath $htmlReportPath -Encoding UTF8
-    Write-Host "HTML Report: $htmlReportPath" -ForegroundColor Green
-    
-    Write-Host ""
-    Write-Host "Opening HTML report in browser..." -ForegroundColor Cyan
-    Start-Process $htmlReportPath
-    Write-Host "Browser opened with report" -ForegroundColor Green
-    
-    Write-Host ""
-    Write-Host "Top 10 Costliest Idle Resources:" -ForegroundColor Cyan
-    $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 10 | Format-Table -Property SubscriptionName, ResourceType, ResourceName, @{Name="Monthly";Expression={"$" + $_.EstimatedMonthlyCost}}, Recommendation -AutoSize
-    
-    Write-Host ""
-    Write-Host "By Resource Type:" -ForegroundColor Cyan
-    $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="Monthly";Expression={"$" + [math]::Round(($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2)}} | Sort-Object -Property Count -Descending | Format-Table -AutoSize
-    
-} else {
-    Write-Host "No idle resources found!" -ForegroundColor Green
-}
-
-Write-Host ""
-Write-Host "Pushing to GitHub..." -ForegroundColor Cyan
-try {
-    if (!(Test-Path ".git")) {
-        git init 2>$null
-        git remote add origin https://github.com/Riz7886/Pyex-AVD-deployment.git 2>$null
-    }
-    
-    git add $OutputPath 2>$null
-    git commit -m "Idle Resources Report $timestamp - $($summary.TotalIdleResources) idle resources" 2>$null
-    git push origin main 2>$null
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "GitHub push successful!" -ForegroundColor Green
-    } else {
-        Write-Host "GitHub push failed (not critical)" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "GitHub push skipped" -ForegroundColor Yellow
-}
-
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  SCAN COMPLETE" -ForegroundColor Green
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
