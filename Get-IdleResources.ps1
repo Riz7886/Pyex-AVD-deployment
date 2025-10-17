@@ -558,8 +558,8 @@ if ($allIdleResources.Count -gt 0) {
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
-        @{Name="EstimatedMonthlyCost";Expression={"`$$($_.EstimatedMonthlyCost)"}}, 
-        @{Name="EstimatedAnnualCost";Expression={"`$$($_.EstimatedAnnualCost)"}}, 
+        @{Name="EstimatedMonthlyCost";Expression={"`$($_.EstimatedMonthlyCost)"}}, 
+        @{Name="EstimatedAnnualCost";Expression={"`$($_.EstimatedAnnualCost)"}}, 
         Reason, Recommendation, Tags
     
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Encoding UTF8
@@ -571,7 +571,17 @@ if ($allIdleResources.Count -gt 0) {
     
     $htmlReportPath = Join-Path $OutputPath "IdleResources-Report-$timestamp.html"
     
-    $htmlContent = @"
+    $htmlContent = "<!DOCTYPE html><html><head><title>Azure Idle Resources Report - $timestamp</title><style>body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; } h1 { color: #0078d4; } h2 { color: #106ebe; margin-top: 30px; } .summary { background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; } .summary-item { margin: 10px 0; } .summary-label { font-weight: bold; display: inline-block; width: 250px; } .summary-value { color: #0078d4; font-weight: bold; } table { border-collapse: collapse; width: 100%; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); } th { background-color: #0078d4; color: white; padding: 12px; text-align: left; } td { padding: 10px; border-bottom: 1px solid #ddd; } tr:hover { background-color: #f5f5f5; } .cost { color: #d13438; font-weight: bold; } .warning { color: #ff8c00; } .success { color: #107c10; } .blocked { background-color: #fff4ce; padding: 10px; border-left: 4px solid #ff8c00; margin: 10px 0; }</style></head><body><h1>Azure Idle Resources Report</h1><p>Generated: $($summary.ScanStartTime)</p><div class='summary'><h2>Scan Summary</h2><div class='summary-item'><span class='summary-label'>User:</span> <span class='summary-value'>$($summary.CurrentUser)</span></div><div class='summary-item'><span class='summary-label'>Scan Duration:</span> $($summary.ScanStartTime) to $($summary.ScanEndTime)</div><div class='summary-item'><span class='summary-label'>Total Subscriptions:</span> $($summary.TotalSubscriptions)</div><div class='summary-item'><span class='summary-label'>Accessible Subscriptions:</span> <span class='success'>$($summary.AccessibleSubscriptions)</span></div><div class='summary-item'><span class='summary-label'>Blocked Subscriptions:</span> <span class='warning'>$($summary.BlockedSubscriptions)</span></div><div class='summary-item'><span class='summary-label'>Subscriptions Scanned:</span> <span class='success'>$($summary.TotalSubscriptionsScanned)</span></div></div><div class='summary'><h2>Resource Summary</h2><div class='summary-item'><span class='summary-label'>Total Resources Scanned:</span> $($summary.TotalResourcesScanned)</div><div class='summary-item'><span class='summary-label'>Total Idle Resources Found:</span> <span class='warning'>$($summary.TotalIdleResources)</span></div></div><div class='summary'><h2>Cost Summary</h2><div class='summary-item'><span class='summary-label'>Estimated Monthly Savings:</span> <span class='cost'>`$($monthlySavings)</span></div><div class='summary-item'><span class='summary-label'>Estimated Annual Savings:</span> <span class='cost'>`$($annualSavings)</span></div></div>"
+    
+    if ($summary.BlockedSubscriptions -gt 0) {
+        $htmlContent += "<div class='blocked'><h2>Blocked Subscriptions (No Access)</h2><p>You do not have read permissions on the following subscriptions:</p><ul>"
+        foreach ($blocked in $summary.BlockedSubscriptionList) {
+            $htmlContent += "<li>$blocked</li>"
+        }
+        $htmlContent += "</ul><p><strong>Solution:</strong> Ask your Azure admin to grant 'Reader' role on these subscriptions.</p></div>"
+    }
+    
+    $htmlContent += "<h2>Idle Resources Details</h2><table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Location</th><th>Status</th><th>Size</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>"
 <!DOCTYPE html>
 <html>
 <head>
