@@ -137,54 +137,10 @@ $allSubscriptions = Get-AzureData -Command "az account list --all --output json"
 
 if ($allSubscriptions.Count -eq 0) {
     Write-Host "ERROR: No subscriptions found" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Possible reasons:" -ForegroundColor Yellow
-    Write-Host "  1. You don't have access to any subscriptions" -ForegroundColor White
-    Write-Host "  2. Your Azure AD roles haven't propagated yet (wait 15 minutes)" -ForegroundColor White
-    Write-Host "  3. You need to be added to subscriptions by your Azure admin" -ForegroundColor White
     exit 1
 }
 
-Write-Host "  Found $($allSubscriptions.Count) subscription(s) in current tenant" -ForegroundColor Green
-
-Write-Host ""
-Write-Host "Step 2b: Checking for subscriptions in PYX Health tenant..." -ForegroundColor Yellow
-
-$missingSubscriptions = @()
-foreach ($priorityId in $PrioritySubscriptionIds) {
-    $found = $allSubscriptions | Where-Object { $_.id -eq $priorityId }
-    if (-not $found) {
-        $missingSubscriptions += $priorityId
-        Write-Host "  Missing subscription: $priorityId" -ForegroundColor Red
-    }
-}
-
-if ($missingSubscriptions.Count -gt 0) {
-    Write-Host ""
-    Write-Host "IMPORTANT: Some priority subscriptions are in a different tenant (PYX Health)" -ForegroundColor Yellow
-    Write-Host "Attempting to access PYX Health tenant subscriptions..." -ForegroundColor Yellow
-    
-    foreach ($missingId in $missingSubscriptions) {
-        try {
-            Write-Host "  Trying to access subscription: $missingId" -ForegroundColor Gray
-            az account set --subscription $missingId 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                $subInfo = Get-AzureData -Command "az account show --subscription $missingId --output json"
-                if ($subInfo) {
-                    Write-Host "  Successfully accessed: $($subInfo.name)" -ForegroundColor Green
-                    $allSubscriptions += $subInfo
-                }
-            } else {
-                Write-Host "  Cannot access subscription $missingId - may need to login to PYX Health tenant" -ForegroundColor Red
-            }
-        } catch {
-            Write-Host "  Failed to access: $missingId" -ForegroundColor Red
-        }
-    }
-}
-
-Write-Host ""
-Write-Host "Total subscriptions available: $($allSubscriptions.Count)" -ForegroundColor Green
+Write-Host "  Found $($allSubscriptions.Count) subscription(s)" -ForegroundColor Green
 Write-Host ""
 
 $enabledSubs = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
