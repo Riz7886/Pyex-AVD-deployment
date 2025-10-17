@@ -127,6 +127,15 @@ Write-Host "================================================================" -F
 Write-Host ""
 
 Write-Host "Step 1: Checking Azure CLI Authentication..." -ForegroundColor Yellow
+
+# Force fresh login to see ALL tenants
+if ($ScanAllTenants) {
+    Write-Host "  Multi-Tenant Mode: Forcing fresh login to discover all tenants..." -ForegroundColor Yellow
+    az logout 2>$null | Out-Null
+    Write-Host "  Please login when browser opens..." -ForegroundColor Cyan
+    az login --output none
+}
+
 try {
     $currentAccount = az account show --output json 2>$null | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$currentAccount) {
@@ -714,7 +723,7 @@ if ($allIdleResources.Count -gt 0) {
     [void]$html.Append("</table><h2>Breakdown by Subscription</h2><table><tr><th>Subscription Name</th><th>Resources Scanned</th><th>Idle Resources</th><th>Monthly Cost</th><th>Annual Cost</th></tr>")
     
     foreach ($sub in ($summary.SubscriptionDetails | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
-        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>$" + $sub.EstimatedMonthlyCost + "</td><td class='cost'>$" + $sub.EstimatedAnnualCost + "</td></tr>")
+        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>`$($sub.EstimatedMonthlyCost)</td><td class='cost'>`$($sub.EstimatedAnnualCost)</td></tr>")
     }
     
     [void]$html.Append("</table><div class='summary' style='margin-top:30px;background-color:#e8f5e9'><h2 style='color:#2e7d32'>TOTAL SAVINGS SUMMARY</h2>")
