@@ -130,17 +130,24 @@ Write-Host "Step 1: Checking Azure CLI Authentication..." -ForegroundColor Yello
 
 # Force fresh login to see ALL tenants
 if ($ScanAllTenants) {
-    Write-Host "  Multi-Tenant Mode: Forcing fresh login to discover all tenants..." -ForegroundColor Yellow
+    Write-Host "  Multi-Tenant Mode: Enabled" -ForegroundColor Cyan
+    Write-Host "  Logging out to get fresh tenant list..." -ForegroundColor Yellow
     az logout 2>$null | Out-Null
-    Write-Host "  Please login when browser opens..." -ForegroundColor Cyan
-    az login --output none
+    Write-Host "  Logout complete" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Opening browser for login - Please authenticate..." -ForegroundColor Cyan
+    Write-Host "  WAITING FOR YOU TO LOGIN IN BROWSER..." -ForegroundColor Yellow
+    az login --output table
+    Write-Host ""
+    Write-Host "  Login complete!" -ForegroundColor Green
 }
 
 try {
+    Write-Host "  Getting current account info..." -ForegroundColor Yellow
     $currentAccount = az account show --output json 2>$null | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or !$currentAccount) {
-        Write-Host "Not logged in. Starting Azure login..." -ForegroundColor Yellow
-        az login --output none
+        Write-Host "  Not logged in. Starting Azure login..." -ForegroundColor Yellow
+        az login --output table
         $currentAccount = az account show --output json | ConvertFrom-Json
     }
     Write-Host "  Logged in as: $($currentAccount.user.name)" -ForegroundColor Green
