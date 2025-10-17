@@ -144,25 +144,10 @@ Write-Host "  Found $($allSubscriptions.Count) subscription(s)" -ForegroundColor
 Write-Host ""
 
 $enabledSubs = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
-Write-Host "All Available Subscriptions:" -ForegroundColor Cyan
+Write-Host "Subscriptions Available:" -ForegroundColor Cyan
 foreach ($sub in $enabledSubs) {
-    $tenantInfo = if ($sub.tenantId) { " (Tenant: $($sub.tenantId))" } else { "" }
-    Write-Host "  - $($sub.name)$tenantInfo" -ForegroundColor White -NoNewline
+    Write-Host "  - $($sub.name)" -ForegroundColor White -NoNewline
     Write-Host " [$($sub.state)]" -ForegroundColor Green
-}
-
-Write-Host ""
-Write-Host "Checking if PYX Health subscriptions are in the list..." -ForegroundColor Yellow
-foreach ($priorityId in $PrioritySubscriptionIds) {
-    $found = $allSubscriptions | Where-Object { $_.id -eq $priorityId }
-    if ($found) {
-        Write-Host "  ✓ Found: $($found.name) - $priorityId" -ForegroundColor Green
-    } else {
-        Write-Host "  ✗ NOT FOUND: $priorityId" -ForegroundColor Red
-        Write-Host "    This subscription is in PYX Health tenant - you may need to:" -ForegroundColor Yellow
-        Write-Host "    1. Login to Azure with PYX Health account" -ForegroundColor White
-        Write-Host "    2. Run: az login --tenant <PYX_HEALTH_TENANT_ID>" -ForegroundColor White
-    }
 }
 
 Write-Host ""
