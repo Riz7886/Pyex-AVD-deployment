@@ -148,35 +148,88 @@ Write-Host "Step 2: Discovering ALL Tenants and Subscriptions..." -ForegroundCol
 $allTenants = @()
 if ($ScanAllTenants) {
     Write-Host "  Multi-Tenant Mode: Enabled" -ForegroundColor Cyan
+    
+    # First, get current account info
+    $currentLogin = az account show --output json 2>$null | ConvertFrom-Json
+    
+    # Get list of all tenants
     $tenantList = az account tenant list --output json 2>$null | ConvertFrom-Json
+    
     if ($tenantList -and $tenantList.Count -gt 0) {
-        Write-Host "  Found $($tenantList.Count) tenant(s)" -ForegroundColor Green
+        Write-Host "  Found $($tenantList.Count) tenant(s) you have access to" -ForegroundColor Green
         foreach ($tenant in $tenantList) {
-            Write-Host "    - Tenant: $($tenant.displayName) [$($tenant.tenantId)]" -ForegroundColor White
-            $allTenants += $tenant
+            $displayName = if ($tenant.displayName) { $tenant.displayName } else { if ($tenant.defaultDomain) { $tenant.defaultDomain } else { "Tenant" } }
+            Write-Host "    - $displayName [$($tenant.tenantId)]" -ForegroundColor White
+            $allTenants += @{
+                tenantId = $tenant.tenantId
+                displayName = $displayName
+                defaultDomain = $tenant.defaultDomain
+            }
         }
     } else {
-        Write-Host "  Only one tenant accessible" -ForegroundColor Yellow
-        $allTenants += @{tenantId = $currentAccount.tenantId; displayName = "Current Tenant"}
+        Write-Host "  Only current tenant accessible" -ForegroundColor Yellow
+        $allTenants += @{
+            tenantId = $currentLogin.tenantId
+            displayName = "Current Tenant"
+            defaultDomain = $currentLogin.user.name.Split('@')[1]
+        }
     }
 } else {
     Write-Host "  Single-Tenant Mode: Scanning current tenant only" -ForegroundColor Yellow
     Write-Host "  TIP: Use -ScanAllTenants switch to scan all accessible tenants" -ForegroundColor Gray
-    $allTenants += @{tenantId = $currentAccount.tenantId; displayName = "Current Tenant"}
+    $currentLogin = az account show --output json 2>$null | ConvertFrom-Json
+    $allTenants += @{
+        tenantId = $currentLogin.tenantId
+        displayName = "Current Tenant"
+        defaultDomain = $currentLogin.user.name.Split('@')[1]
+    }
 }
 
 $allSubscriptions = @()
+$tenantCount = 0
+
 foreach ($tenant in $allTenants) {
+    $tenantCount++
     Write-Host ""
-    Write-Host "  Connecting to Tenant: $($tenant.displayName)" -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "  TENANT [$tenantCount/$($allTenants.Count)]: $($tenant.displayName)" -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "  Tenant ID: $($tenant.tenantId)" -ForegroundColor White
+    if ($tenant.defaultDomain) {
+        Write-Host "  Domain: $($tenant.defaultDomain)" -ForegroundColor White
+    }
     
-    $tenantSubs = Get-AzureData -Command "az account list --all --output json"
+    Write-Host ""
+    Write-Host "  Logging into this tenant..." -ForegroundColor Yellow
     
-    if ($tenantSubs.Count -gt 0) {
-        Write-Host "    Found $($tenantSubs.Count) subscription(s) in this tenant" -ForegroundColor Green
-        $allSubscriptions += $tenantSubs
+    # Login to specific tenant
+    $loginResult = az login --tenant $tenant.tenantId --output none 2>&1
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  Successfully logged in!" -ForegroundColor Green
+        
+        # Get all subscriptions in this tenant
+        Write-Host "  Fetching subscriptions..." -ForegroundColor Yellow
+        $tenantSubs = az account list --all --output json 2>$null | ConvertFrom-Json
+        
+        if ($tenantSubs -and $tenantSubs.Count -gt 0) {
+            Write-Host "  Found $($tenantSubs.Count) subscription(s):" -ForegroundColor Green
+            
+            foreach ($sub in $tenantSubs) {
+                Write-Host "    - $($sub.name) [$($sub.state)]" -ForegroundColor Gray
+                
+                # Add tenant tracking info
+                $sub | Add-Member -NotePropertyName "TenantDisplayName" -NotePropertyValue $tenant.displayName -Force
+                $sub | Add-Member -NotePropertyName "TenantDomain" -NotePropertyValue $tenant.defaultDomain -Force
+                
+                $allSubscriptions += $sub
+            }
+        } else {
+            Write-Host "  No subscriptions found in this tenant" -ForegroundColor Yellow
+        }
     } else {
-        Write-Host "    No subscriptions found in this tenant" -ForegroundColor Yellow
+        Write-Host "  ERROR: Could not connect to tenant" -ForegroundColor Red
+        Write-Host "  You may not have permissions in this tenant" -ForegroundColor Yellow
     }
 }
 
@@ -187,7 +240,11 @@ if ($allSubscriptions.Count -eq 0) {
 }
 
 Write-Host ""
-Write-Host "TOTAL: Found $($allSubscriptions.Count) subscription(s) across all tenants" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "  DISCOVERY COMPLETE" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Green
+Write-Host "  Total Tenants Scanned: $($allTenants.Count)" -ForegroundColor White
+Write-Host "  Total Subscriptions Found: $($allSubscriptions.Count)" -ForegroundColor White
 Write-Host ""
 
 $enabledSubs = $allSubscriptions | Where-Object { $_.state -eq "Enabled" }
