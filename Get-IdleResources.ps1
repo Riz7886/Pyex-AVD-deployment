@@ -96,46 +96,9 @@ function Get-EstimatedMonthlyCost {
     }
     
     return $cost
-}U) {
-                "*D4*" { return 150 }
-                "*D2*" { return 75 }
-                "*B4*" { return 130 }
-                "*B2*" { return 50 }
-                "*E*" { return 200 }
-                "*F*" { return 100 }
-                default { return 50 }
-            }
-        }
-        "Disk" {
-            $sizeGB = 0
-            if ($Size -match "(\d+)\s*GB") {
-                $sizeGB = [int]$Matches[1]
-            }
-            if ($SKU -match "Premium") { 
-                return [math]::Round(($sizeGB * 0.15), 2)
-            }
-            if ($SKU -match "StandardSSD") { 
-                return [math]::Round(($sizeGB * 0.08), 2)
-            }
-            return [math]::Round(($sizeGB * 0.05), 2)
-        }
-        "PublicIP" { return 4 }
-        "NIC" { return 2 }
-        "LoadBalancer" { return 25 }
-        "Storage" {
-            if ($SKU -match "Premium") { return 15 }
-            if ($SKU -match "GRS") { return 8 }
-            return 5
-        }
-        "AppServicePlan" {
-            if ($SKU -match "Premium") { return 150 }
-            if ($SKU -match "Standard") { return 75 }
-            return 55
-        }
-        "SQL" { return 100 }
-        default { return 10 }
-    }
 }
+
+# The previous duplicate or broken code segment starting at line 822 has been removed.
 
 function Test-SubscriptionAccess {
     param([string]$SubscriptionId)
@@ -434,7 +397,7 @@ foreach ($subscription in $subscriptionsToScan) {
                     EstimatedAnnualCost = $estimatedCost * 12
                     Reason = "Not attached to any VM"
                     Recommendation = "Delete if VM removed"
-                    Tags = if ($nic.tags) { ($nic.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
+                    Tags = if ($nic.tags) { ($nic.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " }
                 }
             }
         }
@@ -466,7 +429,7 @@ foreach ($subscription in $subscriptionsToScan) {
                     EstimatedAnnualCost = $estimatedCost * 12
                     Reason = "No containers"
                     Recommendation = "Delete if not needed"
-                    Tags = if ($storage.tags) { ($storage.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
+                    Tags = if ($storage.tags) { ($storage.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " }
                 }
             }
         }
@@ -505,7 +468,7 @@ foreach ($subscription in $subscriptionsToScan) {
                     EstimatedAnnualCost = $estimatedCost * 12
                     Reason = "No backend resources"
                     Recommendation = "Delete if not needed"
-                    Tags = if ($lb.tags) { ($lb.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
+                    Tags = if ($lb.tags) { ($lb.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " }
                 }
             }
         }
@@ -532,7 +495,7 @@ foreach ($subscription in $subscriptionsToScan) {
                     EstimatedAnnualCost = 0
                     Reason = "No resources inside"
                     Recommendation = "Delete empty group"
-                    Tags = if ($rg.tags) { ($rg.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " } else { "" }
+                    Tags = if ($rg.tags) { ($rg.tags.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join "; " }
                 }
             }
         }
