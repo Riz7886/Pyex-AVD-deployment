@@ -1,3 +1,4 @@
+
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
@@ -17,7 +18,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "AZURE IDLE RESOURCES SCANNER - ENTERPRISE GRADE" -ForegroundColor Cyan
-Write-Host "Scanning ALL Subscriptions and Tenants" -ForegroundColor Cyan
+Write-Host "Scanning ALL Accessible Subscriptions" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "Authenticating with Azure..." -ForegroundColor Cyan
@@ -26,27 +27,49 @@ try {
     if (!$context) {
         Write-Host "No active Azure session found. Connecting..." -ForegroundColor Yellow
         Connect-AzAccount | Out-Null
+        $context = Get-AzContext
     }
     Write-Host "Authentication successful" -ForegroundColor Green
+    Write-Host "Logged in as: $($context.Account.Id)" -ForegroundColor Green
 } catch {
-    Write-Host "Authentication failed. Connecting..." -ForegroundColor Yellow
+    Write-Host "Authentication failed. Please connect to Azure..." -ForegroundColor Red
     Connect-AzAccount | Out-Null
+    $context = Get-AzContext
 }
 
 Write-Host ""
 Write-Host "Retrieving all accessible subscriptions..." -ForegroundColor Yellow
-$allSubscriptions = Get-AzSubscription | Where-Object { $_.State -eq "Enabled" }
 
-Write-Host "Found $($allSubscriptions.Count) enabled subscriptions across all tenants" -ForegroundColor Green
+$allSubscriptions = @()
+try {
+    $allSubscriptions = Get-AzSubscription | Where-Object { $_.State -eq "Enabled" }
+} catch {
+    Write-Host "Error retrieving subscriptions. Trying current context only..." -ForegroundColor Yellow
+    $currentSub = Get-AzContext
+    if ($currentSub) {
+        $allSubscriptions = @([PSCustomObject]@{
+            Name = $currentSub.Subscription.Name
+            Id = $currentSub.Subscription.Id
+            State = "Enabled"
+        })
+    }
+}
+
+if ($allSubscriptions.Count -eq 0) {
+    Write-Host "ERROR: No subscriptions found. Please check your Azure permissions." -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "Found $($allSubscriptions.Count) enabled subscription(s)" -ForegroundColor Green
 Write-Host ""
 
 if ($PrioritySubscriptionId) {
     $prioritySub = $allSubscriptions | Where-Object { $_.Id -eq $PrioritySubscriptionId }
     if ($prioritySub) {
-        Write-Host "Priority Subscription: $($prioritySub.Name) (Tenant: $($prioritySub.TenantId))" -ForegroundColor Yellow
+        Write-Host "Priority Subscription: $($prioritySub.Name)" -ForegroundColor Yellow
         $subscriptionsToScan = @($prioritySub) + ($allSubscriptions | Where-Object { $_.Id -ne $PrioritySubscriptionId })
     } else {
-        Write-Host "Priority subscription not found. Scanning all subscriptions." -ForegroundColor Yellow
+        Write-Host "Priority subscription not found. Scanning all available subscriptions." -ForegroundColor Yellow
         $subscriptionsToScan = $allSubscriptions
     }
 } else {
@@ -68,7 +91,6 @@ $summary = @{
     TotalMonthlyCost = 0
     TotalAnnualCost = 0
     SubscriptionDetails = @()
-    ResourceTypeBreakdown = @{}
 }
 
 $totalSubCount = $subscriptionsToScan.Count
@@ -81,9 +103,15 @@ foreach ($subscription in $subscriptionsToScan) {
         Write-Host ""
         Write-Host "[$currentSubNum/$totalSubCount] Scanning: $($subscription.Name)" -ForegroundColor Cyan
         Write-Host "Subscription ID: $($subscription.Id)" -ForegroundColor Gray
-        Write-Host "Tenant ID: $($subscription.TenantId)" -ForegroundColor Gray
         
-        Set-AzContext -SubscriptionId $subscription.Id -TenantId $subscription.TenantId | Out-Null
+        try {
+            Set-AzContext -SubscriptionId $subscription.Id -ErrorAction Stop | Out-Null
+            Write-Host "Context switched successfully" -ForegroundColor Green
+        } catch {
+            Write-Host "ERROR: Cannot switch to subscription. Skipping..." -ForegroundColor Red
+            Write-Host "Error Details: $($_.Exception.Message)" -ForegroundColor Red
+            continue
+        }
         
         $subIdleResources = @()
         $subTotalCost = 0
@@ -113,7 +141,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "Virtual Machine"
                         ResourceName = $vm.Name
                         ResourceGroup = $vm.ResourceGroupName
@@ -124,7 +151,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "VM is stopped or deallocated - consuming storage costs"
                         Recommendation = "Delete VM if no longer needed or restart if required"
-                        Tags = ($vm.Tags.Keys | ForEach-Object { "$_=$($vm.Tags[$_])" }) -join "; "
+                        Tags = if ($vm.Tags) { ($vm.Tags.Keys | ForEach-Object { "$_=$($vm.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -154,7 +181,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "Unattached Disk"
                         ResourceName = $disk.Name
                         ResourceGroup = $disk.ResourceGroupName
@@ -165,7 +191,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Disk not attached to any VM - wasting storage costs"
                         Recommendation = "Delete if no longer needed or attach to VM"
-                        Tags = ($disk.Tags.Keys | ForEach-Object { "$_=$($disk.Tags[$_])" }) -join "; "
+                        Tags = if ($disk.Tags) { ($disk.Tags.Keys | ForEach-Object { "$_=$($disk.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -190,7 +216,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "Public IP Address"
                         ResourceName = $ip.Name
                         ResourceGroup = $ip.ResourceGroupName
@@ -201,7 +226,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Public IP not assigned to any resource"
                         Recommendation = "Delete if not needed - incurs monthly charge"
-                        Tags = ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; "
+                        Tags = if ($ip.Tags) { ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -225,7 +250,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "Network Interface"
                         ResourceName = $nic.Name
                         ResourceGroup = $nic.ResourceGroupName
@@ -236,7 +260,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "NIC not attached to any VM"
                         Recommendation = "Delete if VM was removed"
-                        Tags = ($nic.Tags.Keys | ForEach-Object { "$_=$($nic.Tags[$_])" }) -join "; "
+                        Tags = if ($nic.Tags) { ($nic.Tags.Keys | ForEach-Object { "$_=$($nic.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -281,7 +305,6 @@ foreach ($subscription in $subscriptionsToScan) {
                         $subIdleResources += [PSCustomObject]@{
                             SubscriptionName = $subscription.Name
                             SubscriptionId = $subscription.Id
-                            TenantId = $subscription.TenantId
                             ResourceType = "Storage Account"
                             ResourceName = $storage.StorageAccountName
                             ResourceGroup = $storage.ResourceGroupName
@@ -292,7 +315,7 @@ foreach ($subscription in $subscriptionsToScan) {
                             EstimatedAnnualCost = $estimatedCost * 12
                             Reason = "Storage account empty or has minimal data"
                             Recommendation = "Delete if not needed - base charge applies"
-                            Tags = ($storage.Tags.Keys | ForEach-Object { "$_=$($storage.Tags[$_])" }) -join "; "
+                            Tags = if ($storage.Tags) { ($storage.Tags.Keys | ForEach-Object { "$_=$($storage.Tags[$_])" }) -join "; " } else { "" }
                         }
                     }
                 } catch {
@@ -327,7 +350,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "App Service Plan"
                         ResourceName = $asp.Name
                         ResourceGroup = $asp.ResourceGroup
@@ -338,7 +360,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "App Service Plan has no apps deployed"
                         Recommendation = "Delete if not needed - significant monthly charge"
-                        Tags = ($asp.Tags.Keys | ForEach-Object { "$_=$($asp.Tags[$_])" }) -join "; "
+                        Tags = if ($asp.Tags) { ($asp.Tags.Keys | ForEach-Object { "$_=$($asp.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -354,7 +376,7 @@ foreach ($subscription in $subscriptionsToScan) {
             $lbIdleCount = 0
             
             foreach ($lb in $loadBalancers) {
-                if ($lb.BackendAddressPools.Count -eq 0 -or $lb.BackendAddressPools[0].BackendIpConfigurations.Count -eq 0) {
+                if ($lb.BackendAddressPools.Count -eq 0 -or ($lb.BackendAddressPools[0].BackendIpConfigurations -and $lb.BackendAddressPools[0].BackendIpConfigurations.Count -eq 0)) {
                     $lbIdleCount++
                     $lbSku = $lb.Sku.Name
                     $estimatedCost = if ($lbSku -eq "Standard") { 25 } else { 18 }
@@ -363,7 +385,6 @@ foreach ($subscription in $subscriptionsToScan) {
                     $subIdleResources += [PSCustomObject]@{
                         SubscriptionName = $subscription.Name
                         SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
                         ResourceType = "Load Balancer"
                         ResourceName = $lb.Name
                         ResourceGroup = $lb.ResourceGroupName
@@ -374,7 +395,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         EstimatedAnnualCost = $estimatedCost * 12
                         Reason = "Load Balancer has no backend resources"
                         Recommendation = "Delete if infrastructure was removed"
-                        Tags = ($lb.Tags.Keys | ForEach-Object { "$_=$($lb.Tags[$_])" }) -join "; "
+                        Tags = if ($lb.Tags) { ($lb.Tags.Keys | ForEach-Object { "$_=$($lb.Tags[$_])" }) -join "; " } else { "" }
                     }
                 }
             }
@@ -400,7 +421,6 @@ foreach ($subscription in $subscriptionsToScan) {
                         $subIdleResources += [PSCustomObject]@{
                             SubscriptionName = $subscription.Name
                             SubscriptionId = $subscription.Id
-                            TenantId = $subscription.TenantId
                             ResourceType = "SQL Database"
                             ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
                             ResourceGroup = $sqlServer.ResourceGroupName
@@ -411,7 +431,7 @@ foreach ($subscription in $subscriptionsToScan) {
                             EstimatedAnnualCost = $estimatedCost * 12
                             Reason = "Database is paused or idle"
                             Recommendation = "Delete if no longer needed"
-                            Tags = ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; "
+                            Tags = if ($db.Tags) { ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; " } else { "" }
                         }
                     }
                 }
@@ -432,7 +452,6 @@ foreach ($subscription in $subscriptionsToScan) {
         $summary.SubscriptionDetails += [PSCustomObject]@{
             SubscriptionName = $subscription.Name
             SubscriptionId = $subscription.Id
-            TenantId = $subscription.TenantId
             ResourcesScanned = $subResourceCount
             IdleResourcesFound = $subIdleResources.Count
             EstimatedMonthlyCost = [math]::Round($subTotalCost, 2)
