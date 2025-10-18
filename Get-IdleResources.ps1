@@ -697,12 +697,220 @@ if ($allIdleResources.Count -gt 0) {
     Write-Host "  Building HTML with monthlySavings = '$monthlySavings'" -ForegroundColor Magenta
     Write-Host "  Building HTML with annualSavings = '$annualSavings'" -ForegroundColor Magenta
     
-    # BUILD HTML - Using direct substitution
-    $monthlyDisplay = "$monthlySavings"
-    $annualDisplay = "$annualSavings"
+    # BUILD HTML - COMPLETELY DIFFERENT METHOD - WRITE DOLLAR SIGNS AS PLAIN TEXT
+    $monthlyWithDollar = '
     
-    Write-Host "  monthlyDisplay = '$monthlyDisplay'" -ForegroundColor Magenta
-    Write-Host "  annualDisplay = '$annualDisplay'" -ForegroundColor Magenta
+    $html = New-Object System.Text.StringBuilder
+    [void]$html.Append("<!DOCTYPE html><html><head><title>Azure Idle Resources Report - $timestamp</title><style>body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}h1{color:#0078d4}h2{color:#106ebe;margin-top:30px}.summary{background-color:white;padding:20px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-bottom:20px}.summary-item{margin:10px 0}.summary-label{font-weight:bold;display:inline-block;width:250px}.summary-value{color:#0078d4;font-weight:bold}table{border-collapse:collapse;width:100%;background-color:white;box-shadow:0 2px 4px rgba(0,0,0,0.1)}th{background-color:#0078d4;color:white;padding:12px;text-align:left}td{padding:10px;border-bottom:1px solid #ddd}tr:hover{background-color:#f5f5f5}.cost{color:#d13438;font-weight:bold}.warning{color:#ff8c00}.success{color:#107c10}.blocked{background-color:#fff4ce;padding:10px;border-left:4px solid #ff8c00;margin:10px 0}</style></head><body><h1>Azure Idle Resources Report</h1><p>Generated: $($summary.ScanStartTime)</p>")
+    
+    [void]$html.Append("<div class='summary'><h2>Scan Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>User:</span> <span class='summary-value'>$($summary.CurrentUser)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Scan Duration:</span> $($summary.ScanStartTime) to $($summary.ScanEndTime)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Subscriptions:</span> $($summary.TotalSubscriptions)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Accessible Subscriptions:</span> <span class='success'>$($summary.AccessibleSubscriptions)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Blocked Subscriptions:</span> <span class='warning'>$($summary.BlockedSubscriptions)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Subscriptions Scanned:</span> <span class='success'>$($summary.TotalSubscriptionsScanned)</span></div></div>")
+    
+    [void]$html.Append("<div class='summary'><h2>Resource Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Resources Scanned:</span> $($summary.TotalResourcesScanned)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Idle Resources Found:</span> <span class='warning'>$($summary.TotalIdleResources)</span></div></div>")
+    
+    [void]$html.Append("<div class='summary'><h2>Cost Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Estimated Monthly Savings:</span> <span class='cost'>`$monthlySavings</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Estimated Annual Savings:</span> <span class='cost'>`$annualSavings</span></div></div>")
+    
+    if ($summary.BlockedSubscriptions -gt 0) {
+        [void]$html.Append("<div class='blocked'><h2>Blocked Subscriptions (No Access)</h2><p>You do not have read permissions on the following subscriptions:</p><ul>")
+        foreach ($blocked in $summary.BlockedSubscriptionList) {
+            [void]$html.Append("<li>$blocked</li>")
+        }
+        [void]$html.Append("</ul><p><strong>Solution:</strong> Ask your Azure admin to grant Reader role on these subscriptions.</p></div>")
+    }
+    
+    [void]$html.Append("<h2>Idle Resources Details</h2><table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Location</th><th>Status</th><th>Size</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>")
+    
+    foreach ($resource in ($allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
+        $monthlyFormatted = [math]::Round($resource.EstimatedMonthlyCost, 2)
+        $annualFormatted = [math]::Round($resource.EstimatedAnnualCost, 2)
+        [void]$html.Append("<tr><td>$($resource.SubscriptionName)</td><td>$($resource.ResourceType)</td><td>$($resource.ResourceName)</td><td>$($resource.ResourceGroup)</td><td>$($resource.Location)</td><td>$($resource.Status)</td><td>$($resource.Size)</td><td class='cost'>`$monthlyFormatted</td><td class='cost'>`$annualFormatted</td><td>$($resource.Recommendation)</td></tr>")
+    }
+    
+    [void]$html.Append("</table><h2>Breakdown by Resource Type</h2><table><tr><th>Resource Type</th><th>Count</th><th>Total Monthly Cost</th><th>Total Annual Cost</th></tr>")
+    
+    $resourceTypeBreakdown = $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="MonthlyTotal";Expression={($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum}}, @{Name="AnnualTotal";Expression={($_.Group | Measure-Object -Property EstimatedAnnualCost -Sum).Sum}} | Sort-Object -Property MonthlyTotal -Descending
+    
+    foreach ($type in $resourceTypeBreakdown) {
+        $monthlyRounded = [math]::Round($type.MonthlyTotal, 2)
+        $annualRounded = [math]::Round($type.AnnualTotal, 2)
+        [void]$html.Append("<tr><td>$($type.Name)</td><td>$($type.Count)</td><td class='cost'>`$monthlyRounded</td><td class='cost'>`$annualRounded</td></tr>")
+    }
+    
+    [void]$html.Append("</table><h2>Breakdown by Subscription</h2><table><tr><th>Subscription Name</th><th>Resources Scanned</th><th>Idle Resources</th><th>Monthly Cost</th><th>Annual Cost</th></tr>")
+    
+    foreach ($sub in ($summary.SubscriptionDetails | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
+        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>`$($sub.EstimatedMonthlyCost)</td><td class='cost'>`$($sub.EstimatedAnnualCost)</td></tr>")
+    }
+    
+    [void]$html.Append("</table><div class='summary' style='margin-top:30px;background-color:#e8f5e9'><h2 style='color:#2e7d32'>TOTAL SAVINGS SUMMARY</h2>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Total Idle Resources Found:</span> <span style='color:#d13438;font-size:24px;font-weight:bold'>$($summary.TotalIdleResources)</span></div>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Monthly Cost Savings:</span> <span style='color:#2e7d32;font-size:28px;font-weight:bold'>`$monthlySavings</span></div>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Annual Cost Savings:</span> <span style='color:#2e7d32;font-size:28px;font-weight:bold'>`$annualSavings</span></div>")
+    [void]$html.Append("<div style='margin-top:20px;padding:15px;background-color:#fff3cd;border-radius:5px'><p style='margin:0;font-size:16px;color:#856404'><strong>Recommendation:</strong> Review these idle resources and delete unused ones to achieve estimated savings of <strong style='color:#2e7d32'>`$monthlySavings per month</strong> or <strong style='color:#2e7d32'>`$annualSavings per year</strong>.</p></div></div></body></html>")
+    
+    $html.ToString() | Out-File -FilePath $htmlReportPath -Encoding UTF8
+    Write-Host "HTML Report: $htmlReportPath" -ForegroundColor Green
+    
+    Write-Host ""
+    Write-Host "Opening HTML report in browser..." -ForegroundColor Cyan
+    Start-Process $htmlReportPath
+    Write-Host "Browser opened with report" -ForegroundColor Green
+    
+    Write-Host ""
+    Write-Host "Top 10 Costliest Idle Resources:" -ForegroundColor Cyan
+    $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 10 | Format-Table -Property SubscriptionName, ResourceType, ResourceName, @{Name="Monthly";Expression={"$" + $_.EstimatedMonthlyCost}}, Recommendation -AutoSize
+    
+    Write-Host ""
+    Write-Host "By Resource Type:" -ForegroundColor Cyan
+    $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="Monthly";Expression={"$" + [math]::Round(($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2)}} | Sort-Object -Property Count -Descending | Format-Table -AutoSize
+    
+} else {
+    Write-Host "No idle resources found!" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "Pushing to GitHub..." -ForegroundColor Cyan
+try {
+    if (!(Test-Path ".git")) {
+        git init 2>$null
+        git remote add origin https://github.com/Riz7886/Pyex-AVD-deployment.git 2>$null
+    }
+    
+    git add $OutputPath 2>$null
+    git commit -m "Idle Resources Report $timestamp - $($summary.TotalIdleResources) idle resources" 2>$null
+    git push origin main 2>$null
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "GitHub push successful!" -ForegroundColor Green
+    } else {
+        Write-Host "GitHub push failed (not critical)" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "GitHub push skipped" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "  SCAN COMPLETE" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "" + $monthlyDisplay
+    $annualWithDollar = '
+    
+    $html = New-Object System.Text.StringBuilder
+    [void]$html.Append("<!DOCTYPE html><html><head><title>Azure Idle Resources Report - $timestamp</title><style>body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}h1{color:#0078d4}h2{color:#106ebe;margin-top:30px}.summary{background-color:white;padding:20px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-bottom:20px}.summary-item{margin:10px 0}.summary-label{font-weight:bold;display:inline-block;width:250px}.summary-value{color:#0078d4;font-weight:bold}table{border-collapse:collapse;width:100%;background-color:white;box-shadow:0 2px 4px rgba(0,0,0,0.1)}th{background-color:#0078d4;color:white;padding:12px;text-align:left}td{padding:10px;border-bottom:1px solid #ddd}tr:hover{background-color:#f5f5f5}.cost{color:#d13438;font-weight:bold}.warning{color:#ff8c00}.success{color:#107c10}.blocked{background-color:#fff4ce;padding:10px;border-left:4px solid #ff8c00;margin:10px 0}</style></head><body><h1>Azure Idle Resources Report</h1><p>Generated: $($summary.ScanStartTime)</p>")
+    
+    [void]$html.Append("<div class='summary'><h2>Scan Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>User:</span> <span class='summary-value'>$($summary.CurrentUser)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Scan Duration:</span> $($summary.ScanStartTime) to $($summary.ScanEndTime)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Subscriptions:</span> $($summary.TotalSubscriptions)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Accessible Subscriptions:</span> <span class='success'>$($summary.AccessibleSubscriptions)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Blocked Subscriptions:</span> <span class='warning'>$($summary.BlockedSubscriptions)</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Subscriptions Scanned:</span> <span class='success'>$($summary.TotalSubscriptionsScanned)</span></div></div>")
+    
+    [void]$html.Append("<div class='summary'><h2>Resource Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Resources Scanned:</span> $($summary.TotalResourcesScanned)</div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Total Idle Resources Found:</span> <span class='warning'>$($summary.TotalIdleResources)</span></div></div>")
+    
+    [void]$html.Append("<div class='summary'><h2>Cost Summary</h2>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Estimated Monthly Savings:</span> <span class='cost'>`$monthlySavings</span></div>")
+    [void]$html.Append("<div class='summary-item'><span class='summary-label'>Estimated Annual Savings:</span> <span class='cost'>`$annualSavings</span></div></div>")
+    
+    if ($summary.BlockedSubscriptions -gt 0) {
+        [void]$html.Append("<div class='blocked'><h2>Blocked Subscriptions (No Access)</h2><p>You do not have read permissions on the following subscriptions:</p><ul>")
+        foreach ($blocked in $summary.BlockedSubscriptionList) {
+            [void]$html.Append("<li>$blocked</li>")
+        }
+        [void]$html.Append("</ul><p><strong>Solution:</strong> Ask your Azure admin to grant Reader role on these subscriptions.</p></div>")
+    }
+    
+    [void]$html.Append("<h2>Idle Resources Details</h2><table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Location</th><th>Status</th><th>Size</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>")
+    
+    foreach ($resource in ($allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
+        $monthlyFormatted = [math]::Round($resource.EstimatedMonthlyCost, 2)
+        $annualFormatted = [math]::Round($resource.EstimatedAnnualCost, 2)
+        [void]$html.Append("<tr><td>$($resource.SubscriptionName)</td><td>$($resource.ResourceType)</td><td>$($resource.ResourceName)</td><td>$($resource.ResourceGroup)</td><td>$($resource.Location)</td><td>$($resource.Status)</td><td>$($resource.Size)</td><td class='cost'>`$monthlyFormatted</td><td class='cost'>`$annualFormatted</td><td>$($resource.Recommendation)</td></tr>")
+    }
+    
+    [void]$html.Append("</table><h2>Breakdown by Resource Type</h2><table><tr><th>Resource Type</th><th>Count</th><th>Total Monthly Cost</th><th>Total Annual Cost</th></tr>")
+    
+    $resourceTypeBreakdown = $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="MonthlyTotal";Expression={($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum}}, @{Name="AnnualTotal";Expression={($_.Group | Measure-Object -Property EstimatedAnnualCost -Sum).Sum}} | Sort-Object -Property MonthlyTotal -Descending
+    
+    foreach ($type in $resourceTypeBreakdown) {
+        $monthlyRounded = [math]::Round($type.MonthlyTotal, 2)
+        $annualRounded = [math]::Round($type.AnnualTotal, 2)
+        [void]$html.Append("<tr><td>$($type.Name)</td><td>$($type.Count)</td><td class='cost'>`$monthlyRounded</td><td class='cost'>`$annualRounded</td></tr>")
+    }
+    
+    [void]$html.Append("</table><h2>Breakdown by Subscription</h2><table><tr><th>Subscription Name</th><th>Resources Scanned</th><th>Idle Resources</th><th>Monthly Cost</th><th>Annual Cost</th></tr>")
+    
+    foreach ($sub in ($summary.SubscriptionDetails | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
+        [void]$html.Append("<tr><td>$($sub.SubscriptionName)</td><td>$($sub.ResourcesScanned)</td><td class='warning'>$($sub.IdleResourcesFound)</td><td class='cost'>`$($sub.EstimatedMonthlyCost)</td><td class='cost'>`$($sub.EstimatedAnnualCost)</td></tr>")
+    }
+    
+    [void]$html.Append("</table><div class='summary' style='margin-top:30px;background-color:#e8f5e9'><h2 style='color:#2e7d32'>TOTAL SAVINGS SUMMARY</h2>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Total Idle Resources Found:</span> <span style='color:#d13438;font-size:24px;font-weight:bold'>$($summary.TotalIdleResources)</span></div>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Monthly Cost Savings:</span> <span style='color:#2e7d32;font-size:28px;font-weight:bold'>`$monthlySavings</span></div>")
+    [void]$html.Append("<div class='summary-item' style='font-size:20px;margin:15px 0'><span class='summary-label'>Annual Cost Savings:</span> <span style='color:#2e7d32;font-size:28px;font-weight:bold'>`$annualSavings</span></div>")
+    [void]$html.Append("<div style='margin-top:20px;padding:15px;background-color:#fff3cd;border-radius:5px'><p style='margin:0;font-size:16px;color:#856404'><strong>Recommendation:</strong> Review these idle resources and delete unused ones to achieve estimated savings of <strong style='color:#2e7d32'>`$monthlySavings per month</strong> or <strong style='color:#2e7d32'>`$annualSavings per year</strong>.</p></div></div></body></html>")
+    
+    $html.ToString() | Out-File -FilePath $htmlReportPath -Encoding UTF8
+    Write-Host "HTML Report: $htmlReportPath" -ForegroundColor Green
+    
+    Write-Host ""
+    Write-Host "Opening HTML report in browser..." -ForegroundColor Cyan
+    Start-Process $htmlReportPath
+    Write-Host "Browser opened with report" -ForegroundColor Green
+    
+    Write-Host ""
+    Write-Host "Top 10 Costliest Idle Resources:" -ForegroundColor Cyan
+    $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 10 | Format-Table -Property SubscriptionName, ResourceType, ResourceName, @{Name="Monthly";Expression={"$" + $_.EstimatedMonthlyCost}}, Recommendation -AutoSize
+    
+    Write-Host ""
+    Write-Host "By Resource Type:" -ForegroundColor Cyan
+    $allIdleResources | Group-Object -Property ResourceType | Select-Object Name, Count, @{Name="Monthly";Expression={"$" + [math]::Round(($_.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2)}} | Sort-Object -Property Count -Descending | Format-Table -AutoSize
+    
+} else {
+    Write-Host "No idle resources found!" -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Host "Pushing to GitHub..." -ForegroundColor Cyan
+try {
+    if (!(Test-Path ".git")) {
+        git init 2>$null
+        git remote add origin https://github.com/Riz7886/Pyex-AVD-deployment.git 2>$null
+    }
+    
+    git add $OutputPath 2>$null
+    git commit -m "Idle Resources Report $timestamp - $($summary.TotalIdleResources) idle resources" 2>$null
+    git push origin main 2>$null
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "GitHub push successful!" -ForegroundColor Green
+    } else {
+        Write-Host "GitHub push failed (not critical)" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "GitHub push skipped" -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "  SCAN COMPLETE" -ForegroundColor Green
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "" + $annualDisplay
+    
+    Write-Host "  monthlyWithDollar = '$monthlyWithDollar'" -ForegroundColor Magenta
+    Write-Host "  annualWithDollar = '$annualWithDollar'" -ForegroundColor Magenta
     Write-Host ""
     
     $html = New-Object System.Text.StringBuilder
