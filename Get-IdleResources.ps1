@@ -861,3 +861,5 @@ Write-Host "  4. Take action to achieve estimated savings of `$([math]::Round($s
 Write-Host ""
 Write-Host "Thank you for using Azure Idle Resources Scanner!" -ForegroundColor Green
 Write-Host ""
+
+
