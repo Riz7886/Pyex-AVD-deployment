@@ -634,10 +634,8 @@ Write-Host ""
 
 if ($allIdleResources.Count -gt 0) {
     
-    # CSV EXPORT - Format as currency so Excel shows dollar amounts
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
-    # Format the data with dollar signs for CSV
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
         @{Name='MonthlyUSD'; Expression={' + [string]$_.EstimatedMonthlyCost}},
         @{Name='AnnualUSD'; Expression={' + [string]$_.EstimatedAnnualCost}},
@@ -646,14 +644,14 @@ if ($allIdleResources.Count -gt 0) {
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Force
     Write-Host "  Detailed CSV Report: $detailedReportPath" -ForegroundColor Green
     
-    # HTML REPORT - Build with simple string concatenation
     $htmlReportPath = Join-Path $OutputPath "IdleResources-Report-$timestamp.html"
     
     $monthlyAmount = [math]::Round($summary.TotalMonthlyCost, 2)
     $annualAmount = [math]::Round($summary.TotalAnnualCost, 2)
     
-    # Build HTML line by line with simple concatenation - NO here-strings!
-    $html = '<!DOCTYPE html><html><head><title>Azure Idle Resources Report - ' + $timestamp + '</title>'
+    $dollar = [char]36
+    
+    $html = '<!DOCTYPE html><html><head><title>Azure Idle Resources Report</title>'
     $html += '<style>body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}'
     $html += 'h1{color:#0078d4}.summary{background-color:#fff;padding:20px;margin:20px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}'
     $html += '.summary-item{margin:10px 0;padding:10px;border-bottom:1px solid #eee}'
@@ -673,8 +671,8 @@ if ($allIdleResources.Count -gt 0) {
     $html += '<div class="summary-item"><span class="summary-label">Total Idle Resources:</span> <span class="summary-value">' + $summary.TotalIdleResources + '</span></div></div>'
     
     $html += '<div class="summary"><h2>Cost Summary</h2>'
-    $html += '<div class="summary-item"><span class="summary-label">Estimated Monthly Savings:</span> <span class="cost"> + $monthlyAmount + '</span></div>'
-    $html += '<div class="summary-item"><span class="summary-label">Estimated Annual Savings:</span> <span class="cost"> + $annualAmount + '</span></div></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Estimated Monthly Savings:</span> <span class="cost">' + $dollar + $monthlyAmount + '</span></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Estimated Annual Savings:</span> <span class="cost">' + $dollar + $annualAmount + '</span></div></div>'
     
     $html += '<h2>Idle Resources Details</h2><table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Status</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>'
     
@@ -687,18 +685,18 @@ if ($allIdleResources.Count -gt 0) {
         $html += '<td>' + $resource.ResourceName + '</td>'
         $html += '<td>' + $resource.ResourceGroup + '</td>'
         $html += '<td class="status-stopped">' + $resource.Status + '</td>'
-        $html += '<td> + $monthlyCost + '</td>'
-        $html += '<td> + $annualCost + '</td>'
+        $html += '<td>' + $dollar + $monthlyCost + '</td>'
+        $html += '<td>' + $dollar + $annualCost + '</td>'
         $html += '<td>' + $resource.Recommendation + '</td></tr>'
     }
     
     $html += '</table><div class="footer"><h2>Total Savings Summary</h2>'
     $html += '<p>Total Idle Resources Found: <strong>' + $allIdleResources.Count + '</strong></p>'
-    $html += '<p>Monthly Cost Savings: <strong> + $monthlyAmount + '</strong></p>'
-    $html += '<p>Annual Cost Savings: <strong> + $annualAmount + '</strong></p>'
+    $html += '<p>Monthly Cost Savings: <strong>' + $dollar + $monthlyAmount + '</strong></p>'
+    $html += '<p>Annual Cost Savings: <strong>' + $dollar + $annualAmount + '</strong></p>'
     $html += '<p>Recommendation: Review these idle resources and delete unused ones to achieve estimated savings.</p></div></body></html>'
     
-    $html | Out-File -FilePath $htmlReportPath -Encoding UTF8 -Force
+    [System.IO.File]::WriteAllText($htmlReportPath, $html, [System.Text.Encoding]::UTF8)
     
     Write-Host "  HTML Report: $htmlReportPath" -ForegroundColor Green
     Write-Host ""
@@ -716,3 +714,6 @@ Write-Host "Reports saved to: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "SCAN COMPLETE!" -ForegroundColor Green
 Write-Host ""
+
+
+
