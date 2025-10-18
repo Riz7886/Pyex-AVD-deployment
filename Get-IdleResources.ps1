@@ -636,10 +636,22 @@ if ($allIdleResources.Count -gt 0) {
     
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
-    $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
-        @{Name='MonthlyUSD'; Expression={"USD " + [string]$_.EstimatedMonthlyCost}},
-        @{Name='AnnualUSD'; Expression={"USD " + [string]$_.EstimatedAnnualCost}},
-        Reason, Recommendation, Tags
+    $csvData = $allIdleResources | Select-Object `
+        @{Name='Subscription Name'; Expression={$_.SubscriptionName}},
+        @{Name='Subscription ID'; Expression={$_.SubscriptionId}},
+        @{Name='Resource Type'; Expression={$_.ResourceType}},
+        @{Name='Resource Name'; Expression={$_.ResourceName}},
+        @{Name='Resource Group'; Expression={$_.ResourceGroup}},
+        @{Name='Location'; Expression={$_.Location}},
+        @{Name='Status'; Expression={$_.Status}},
+        @{Name='Size'; Expression={$_.Size}},
+        @{Name='Monthly Cost (Numeric)'; Expression={$_.EstimatedMonthlyCost}},
+        @{Name='Annual Cost (Numeric)'; Expression={$_.EstimatedAnnualCost}},
+        @{Name='Monthly Cost'; Expression={'USD ' + $_.EstimatedMonthlyCost}},
+        @{Name='Annual Cost'; Expression={'USD ' + $_.EstimatedAnnualCost}},
+        @{Name='Reason'; Expression={$_.Reason}},
+        @{Name='Recommendation'; Expression={$_.Recommendation}},
+        @{Name='Tags'; Expression={$_.Tags}}
     
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Force
     Write-Host "  Detailed CSV Report: $detailedReportPath" -ForegroundColor Green
