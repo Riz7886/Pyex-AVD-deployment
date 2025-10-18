@@ -614,7 +614,7 @@ foreach ($subscription in $subscriptionsToScan) {
         }
         
         Write-Host ""
-        Write-Host "  SUBSCRIPTION SUMMARY: $($subIdleResources.Count) idle resources | Potential Savings: `$$([math]::Round($subTotalCost, 2))/month" -ForegroundColor $(if($subIdleResources.Count -gt 0){"Yellow"}else{"Green"})
+        Write-Host "  SUBSCRIPTION SUMMARY: $($subIdleResources.Count) idle resources | Potential Savings: `$([math]::Round($subTotalCost, 2))/month" -ForegroundColor $(if($subIdleResources.Count -gt 0){"Yellow"}else{"Green"})
         
     } catch {
         Write-Host "  ERROR: $($_.Exception.Message)" -ForegroundColor Red
@@ -628,127 +628,77 @@ Write-Host "================================================================" -F
 Write-Host "  SCAN COMPLETE!" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  Total Idle Resources Found: $($summary.TotalIdleResources)" -ForegroundColor Yellow
-Write-Host "  Estimated Monthly Savings: `$$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
+Write-Host "  Estimated Monthly Savings: `$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
 Write-Host "  Estimated Annual Savings: `$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Green
 Write-Host ""
 
 if ($allIdleResources.Count -gt 0) {
+    
+    # CSV EXPORT - Format as currency so Excel shows dollar amounts
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
+    # Format the data with dollar signs for CSV
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
-        @{Name='EstimatedMonthlyCost'; Expression={"`$($_.EstimatedMonthlyCost)"}},
-        @{Name='EstimatedAnnualCost'; Expression={"`$($_.EstimatedAnnualCost)"}},
+        @{Name='MonthlyUSD'; Expression={' + [string]$_.EstimatedMonthlyCost}},
+        @{Name='AnnualUSD'; Expression={' + [string]$_.EstimatedAnnualCost}},
         Reason, Recommendation, Tags
     
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Force
     Write-Host "  Detailed CSV Report: $detailedReportPath" -ForegroundColor Green
     
-    # CREATE HTML REPORT - USING ADD-CONTENT TO FIX DOLLAR SIGN DISPLAY
+    # HTML REPORT - Build with simple string concatenation
     $htmlReportPath = Join-Path $OutputPath "IdleResources-Report-$timestamp.html"
     
-    # Clear file if exists
-    if (Test-Path $htmlReportPath) { Remove-Item $htmlReportPath -Force }
-    
-    # Calculate amounts
     $monthlyAmount = [math]::Round($summary.TotalMonthlyCost, 2)
     $annualAmount = [math]::Round($summary.TotalAnnualCost, 2)
     
-    # Write HTML header and style
-    Add-Content -Path $htmlReportPath -Value @"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Azure Idle Resources Report - $timestamp</title>
-    <style>
-        body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}
-        h1{color:#0078d4}
-        .summary{background-color:#fff;padding:20px;margin:20px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
-        .summary-item{margin:10px 0;padding:10px;border-bottom:1px solid #eee}
-        .summary-label{font-weight:bold;color:#333;display:inline-block;width:250px}
-        .summary-value{color:#0078d4}
-        .cost{font-size:1.2em;font-weight:bold;color:#107c10}
-        table{width:100%;border-collapse:collapse;background-color:#fff;margin:20px 0;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
-        th{background-color:#0078d4;color:white;padding:12px;text-align:left}
-        td{padding:10px;border-bottom:1px solid #ddd}
-        tr:hover{background-color:#f5f5f5}
-        .status-stopped{color:#d13438}
-        .status-unattached{color:#ff8c00}
-        .footer{margin-top:30px;padding:20px;background-color:#fff;border-radius:8px}
-    </style>
-</head>
-<body>
-    <h1>Azure Idle Resources Report</h1>
-    <p>Generated: $($summary.ScanStartTime)</p>
-"@
+    # Build HTML line by line with simple concatenation - NO here-strings!
+    $html = '<!DOCTYPE html><html><head><title>Azure Idle Resources Report - ' + $timestamp + '</title>'
+    $html += '<style>body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}'
+    $html += 'h1{color:#0078d4}.summary{background-color:#fff;padding:20px;margin:20px 0;border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}'
+    $html += '.summary-item{margin:10px 0;padding:10px;border-bottom:1px solid #eee}'
+    $html += '.summary-label{font-weight:bold;color:#333;display:inline-block;width:250px}'
+    $html += '.summary-value{color:#0078d4}.cost{font-size:1.2em;font-weight:bold;color:#107c10}'
+    $html += 'table{width:100%;border-collapse:collapse;background-color:#fff;margin:20px 0;box-shadow:0 2px 4px rgba(0,0,0,0.1)}'
+    $html += 'th{background-color:#0078d4;color:white;padding:12px;text-align:left}'
+    $html += 'td{padding:10px;border-bottom:1px solid #ddd}tr:hover{background-color:#f5f5f5}'
+    $html += '.status-stopped{color:#d13438}.status-unattached{color:#ff8c00}'
+    $html += '.footer{margin-top:30px;padding:20px;background-color:#fff;border-radius:8px}</style></head><body>'
+    $html += '<h1>Azure Idle Resources Report</h1><p>Generated: ' + $summary.ScanStartTime + '</p>'
     
-    # Write scan summary section
-    Add-Content -Path $htmlReportPath -Value @"
-    <div class='summary'>
-        <h2>Scan Summary</h2>
-        <div class='summary-item'><span class='summary-label'>User:</span> <span class='summary-value'>$($summary.CurrentUser)</span></div>
-        <div class='summary-item'><span class='summary-label'>Total Subscriptions Scanned:</span> <span class='summary-value'>$($summary.TotalSubscriptionsScanned)</span></div>
-        <div class='summary-item'><span class='summary-label'>Total Resources Scanned:</span> <span class='summary-value'>$($summary.TotalResourcesScanned)</span></div>
-        <div class='summary-item'><span class='summary-label'>Total Idle Resources:</span> <span class='summary-value'>$($summary.TotalIdleResources)</span></div>
-    </div>
-"@
+    $html += '<div class="summary"><h2>Scan Summary</h2>'
+    $html += '<div class="summary-item"><span class="summary-label">User:</span> <span class="summary-value">' + $summary.CurrentUser + '</span></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Total Subscriptions Scanned:</span> <span class="summary-value">' + $summary.TotalSubscriptionsScanned + '</span></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Total Resources Scanned:</span> <span class="summary-value">' + $summary.TotalResourcesScanned + '</span></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Total Idle Resources:</span> <span class="summary-value">' + $summary.TotalIdleResources + '</span></div></div>'
     
-    # Write cost summary with dollar amounts using backtick-dollar
-    Add-Content -Path $htmlReportPath -Value "    <div class='summary'>"
-    Add-Content -Path $htmlReportPath -Value "        <h2>Cost Summary</h2>"
-    Add-Content -Path $htmlReportPath -Value "        <div class='summary-item'><span class='summary-label'>Estimated Monthly Savings:</span> <span class='cost'>`$monthlyAmount</span></div>"
-    Add-Content -Path $htmlReportPath -Value "        <div class='summary-item'><span class='summary-label'>Estimated Annual Savings:</span> <span class='cost'>`$annualAmount</span></div>"
-    Add-Content -Path $htmlReportPath -Value "    </div>"
+    $html += '<div class="summary"><h2>Cost Summary</h2>'
+    $html += '<div class="summary-item"><span class="summary-label">Estimated Monthly Savings:</span> <span class="cost"> + $monthlyAmount + '</span></div>'
+    $html += '<div class="summary-item"><span class="summary-label">Estimated Annual Savings:</span> <span class="cost"> + $annualAmount + '</span></div></div>'
     
-    # Write resource table header
-    Add-Content -Path $htmlReportPath -Value @"
-    <h2>Idle Resources Details</h2>
-    <table>
-        <tr>
-            <th>Subscription</th>
-            <th>Resource Type</th>
-            <th>Resource Name</th>
-            <th>Resource Group</th>
-            <th>Status</th>
-            <th>Monthly Cost</th>
-            <th>Annual Cost</th>
-            <th>Recommendation</th>
-        </tr>
-"@
+    $html += '<h2>Idle Resources Details</h2><table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Status</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>'
     
-    # Write each resource row with dollar amounts
     foreach ($resource in ($allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
         $monthlyCost = [math]::Round($resource.EstimatedMonthlyCost, 2)
         $annualCost = [math]::Round($resource.EstimatedAnnualCost, 2)
         
-        Add-Content -Path $htmlReportPath -Value "        <tr>"
-        Add-Content -Path $htmlReportPath -Value "            <td>$($resource.SubscriptionName)</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>$($resource.ResourceType)</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>$($resource.ResourceName)</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>$($resource.ResourceGroup)</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td class='status-stopped'>$($resource.Status)</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>`$monthlyCost</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>`$annualCost</td>"
-        Add-Content -Path $htmlReportPath -Value "            <td>$($resource.Recommendation)</td>"
-        Add-Content -Path $htmlReportPath -Value "        </tr>"
+        $html += '<tr><td>' + $resource.SubscriptionName + '</td>'
+        $html += '<td>' + $resource.ResourceType + '</td>'
+        $html += '<td>' + $resource.ResourceName + '</td>'
+        $html += '<td>' + $resource.ResourceGroup + '</td>'
+        $html += '<td class="status-stopped">' + $resource.Status + '</td>'
+        $html += '<td> + $monthlyCost + '</td>'
+        $html += '<td> + $annualCost + '</td>'
+        $html += '<td>' + $resource.Recommendation + '</td></tr>'
     }
     
-    # Close table
-    Add-Content -Path $htmlReportPath -Value "    </table>"
+    $html += '</table><div class="footer"><h2>Total Savings Summary</h2>'
+    $html += '<p>Total Idle Resources Found: <strong>' + $allIdleResources.Count + '</strong></p>'
+    $html += '<p>Monthly Cost Savings: <strong> + $monthlyAmount + '</strong></p>'
+    $html += '<p>Annual Cost Savings: <strong> + $annualAmount + '</strong></p>'
+    $html += '<p>Recommendation: Review these idle resources and delete unused ones to achieve estimated savings.</p></div></body></html>'
     
-    # Write footer with total savings
-    Add-Content -Path $htmlReportPath -Value "    <div class='footer'>"
-    Add-Content -Path $htmlReportPath -Value "        <h2>Total Savings Summary</h2>"
-    Add-Content -Path $htmlReportPath -Value "        <p>Total Idle Resources Found: <strong>$($allIdleResources.Count)</strong></p>"
-    Add-Content -Path $htmlReportPath -Value "        <p>Monthly Cost Savings: <strong>`$monthlyAmount</strong></p>"
-    Add-Content -Path $htmlReportPath -Value "        <p>Annual Cost Savings: <strong>`$annualAmount</strong></p>"
-    Add-Content -Path $htmlReportPath -Value "        <p>Recommendation: Review these idle resources and delete unused ones to achieve estimated savings.</p>"
-    Add-Content -Path $htmlReportPath -Value "    </div>"
-    
-    # Close HTML
-    Add-Content -Path $htmlReportPath -Value @"
-</body>
-</html>
-"@
+    $html | Out-File -FilePath $htmlReportPath -Encoding UTF8 -Force
     
     Write-Host "  HTML Report: $htmlReportPath" -ForegroundColor Green
     Write-Host ""
@@ -764,102 +714,5 @@ if ($allIdleResources.Count -gt 0) {
 Write-Host ""
 Write-Host "Reports saved to: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
-
-# Display subscription breakdown
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  SUBSCRIPTION BREAKDOWN" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-foreach ($subDetail in $summary.SubscriptionDetails) {
-    Write-Host ""
-    Write-Host "Subscription: $($subDetail.SubscriptionName)" -ForegroundColor White
-    Write-Host "  Resources Scanned: $($subDetail.ResourcesScanned)" -ForegroundColor Gray
-    Write-Host "  Idle Resources: $($subDetail.IdleResourcesFound)" -ForegroundColor Yellow
-    Write-Host "  Monthly Cost: `$($subDetail.EstimatedMonthlyCost)" -ForegroundColor Green
-    Write-Host "  Annual Cost: `$($subDetail.EstimatedAnnualCost)" -ForegroundColor Green
-}
-
+Write-Host "SCAN COMPLETE!" -ForegroundColor Green
 Write-Host ""
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  RESOURCE TYPE BREAKDOWN" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-
-$resourceTypeBreakdown = $allIdleResources | Group-Object -Property ResourceType | Sort-Object Count -Descending
-foreach ($group in $resourceTypeBreakdown) {
-    $typeCost = ($group.Group | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum
-    Write-Host ""
-    Write-Host "$($group.Name): $($group.Count) resources" -ForegroundColor White
-    Write-Host "  Monthly Cost: `$([math]::Round($typeCost, 2))" -ForegroundColor Yellow
-    Write-Host "  Annual Cost: `$([math]::Round($typeCost * 12, 2))" -ForegroundColor Yellow
-}
-
-Write-Host ""
-Write-Host "================================================================" -ForegroundColor Green
-Write-Host "  FINAL SUMMARY" -ForegroundColor Green
-Write-Host "================================================================" -ForegroundColor Green
-Write-Host "  Scan Duration: $($summary.ScanStartTime) to $($summary.ScanEndTime)" -ForegroundColor White
-Write-Host "  Total Tenants: $($allTenants.Count)" -ForegroundColor White
-Write-Host "  Total Subscriptions: $($summary.TotalSubscriptions)" -ForegroundColor White
-Write-Host "  Accessible Subscriptions: $($summary.AccessibleSubscriptions)" -ForegroundColor Green
-Write-Host "  Blocked Subscriptions: $($summary.BlockedSubscriptions)" -ForegroundColor Red
-Write-Host "  Subscriptions Scanned: $($summary.TotalSubscriptionsScanned)" -ForegroundColor White
-Write-Host "  Resources Scanned: $($summary.TotalResourcesScanned)" -ForegroundColor White
-Write-Host "  Idle Resources Found: $($summary.TotalIdleResources)" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "  POTENTIAL SAVINGS:" -ForegroundColor Cyan
-Write-Host "    Monthly: `$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Green
-Write-Host "    Annual: `$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Green
-Write-Host ""
-
-# Optional: Push to GitHub if configured
-$gitHubEnabled = $false  # Set to $true if you want GitHub integration
-$gitHubRepo = ""  # Set your GitHub repo path
-
-if ($gitHubEnabled -and $gitHubRepo) {
-    Write-Host "================================================================" -ForegroundColor Cyan
-    Write-Host "  PUSHING TO GITHUB" -ForegroundColor Cyan
-    Write-Host "================================================================" -ForegroundColor Cyan
-    
-    try {
-        $gitPath = Split-Path $gitHubRepo -Parent
-        if (Test-Path $gitPath) {
-            Push-Location $gitPath
-            
-            Write-Host "  Copying reports to GitHub folder..." -ForegroundColor Yellow
-            Copy-Item -Path "$OutputPath\*" -Destination $gitPath -Force
-            
-            Write-Host "  Adding files to git..." -ForegroundColor Yellow
-            git add .
-            
-            Write-Host "  Committing changes..." -ForegroundColor Yellow
-            $commitMessage = "Azure Idle Resources Report - $timestamp"
-            git commit -m $commitMessage
-            
-            Write-Host "  Pushing to GitHub..." -ForegroundColor Yellow
-            git push
-            
-            Write-Host "  Successfully pushed to GitHub!" -ForegroundColor Green
-            
-            Pop-Location
-        } else {
-            Write-Host "  GitHub path not found: $gitPath" -ForegroundColor Red
-        }
-    } catch {
-        Write-Host "  GitHub push failed: $($_.Exception.Message)" -ForegroundColor Red
-    }
-    Write-Host ""
-}
-
-Write-Host "================================================================" -ForegroundColor Green
-Write-Host "  SCAN COMPLETE!" -ForegroundColor Green
-Write-Host "================================================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "Next Steps:" -ForegroundColor Cyan
-Write-Host "  1. Review the HTML report in your browser" -ForegroundColor White
-Write-Host "  2. Check the CSV file for detailed data: $OutputPath" -ForegroundColor White
-Write-Host "  3. Identify resources to delete or restart" -ForegroundColor White
-Write-Host "  4. Take action to achieve estimated savings of `$([math]::Round($summary.TotalMonthlyCost, 2))/month" -ForegroundColor White
-Write-Host ""
-Write-Host "Thank you for using Azure Idle Resources Scanner!" -ForegroundColor Green
-Write-Host ""
-
-
