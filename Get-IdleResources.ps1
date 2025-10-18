@@ -641,6 +641,15 @@ $summary.ScanEndTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $monthlySavings = [math]::Round($summary.TotalMonthlyCost, 2)
 $annualSavings = [math]::Round($summary.TotalAnnualCost, 2)
 
+# DEBUG OUTPUT TO VERIFY VARIABLES
+Write-Host ""
+Write-Host "DEBUG - CHECKING VARIABLES:" -ForegroundColor Magenta
+Write-Host "  monthlySavings variable = '$monthlySavings'" -ForegroundColor Magenta
+Write-Host "  annualSavings variable = '$annualSavings'" -ForegroundColor Magenta
+Write-Host "  TotalMonthlyCost = '$($summary.TotalMonthlyCost)'" -ForegroundColor Magenta
+Write-Host "  TotalAnnualCost = '$($summary.TotalAnnualCost)'" -ForegroundColor Magenta
+Write-Host ""
+
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  FINAL REPORT" -ForegroundColor Cyan
@@ -669,8 +678,8 @@ if ($allIdleResources.Count -gt 0) {
     $detailedReportPath = Join-Path $OutputPath "IdleResources-Detailed-$timestamp.csv"
     
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
-        @{Name="EstimatedMonthlyCost";Expression={"`$$($_.EstimatedMonthlyCost)"}}, 
-        @{Name="EstimatedAnnualCost";Expression={"`$$($_.EstimatedAnnualCost)"}}, 
+        @{Name="EstimatedMonthlyCost";Expression={"`$($_.EstimatedMonthlyCost)"}}, 
+        @{Name="EstimatedAnnualCost";Expression={"`$($_.EstimatedAnnualCost)"}}, 
         Reason, Recommendation, Tags
     
     $csvData | Export-Csv -Path $detailedReportPath -NoTypeInformation -Encoding UTF8
@@ -681,6 +690,20 @@ if ($allIdleResources.Count -gt 0) {
     Write-Host "Summary Report: $summaryReportPath" -ForegroundColor Green
     
     $htmlReportPath = Join-Path $OutputPath "IdleResources-Report-$timestamp.html"
+    
+    # DEBUG: Show what we're putting in HTML
+    Write-Host ""
+    Write-Host "DEBUG - HTML GENERATION:" -ForegroundColor Magenta
+    Write-Host "  Building HTML with monthlySavings = '$monthlySavings'" -ForegroundColor Magenta
+    Write-Host "  Building HTML with annualSavings = '$annualSavings'" -ForegroundColor Magenta
+    
+    # BUILD HTML - Using direct substitution
+    $monthlyDisplay = "$monthlySavings"
+    $annualDisplay = "$annualSavings"
+    
+    Write-Host "  monthlyDisplay = '$monthlyDisplay'" -ForegroundColor Magenta
+    Write-Host "  annualDisplay = '$annualDisplay'" -ForegroundColor Magenta
+    Write-Host ""
     
     $html = New-Object System.Text.StringBuilder
     [void]$html.Append("<!DOCTYPE html><html><head><title>Azure Idle Resources Report - $timestamp</title><style>body{font-family:Arial,sans-serif;margin:20px;background-color:#f5f5f5}h1{color:#0078d4}h2{color:#106ebe;margin-top:30px}.summary{background-color:white;padding:20px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-bottom:20px}.summary-item{margin:10px 0}.summary-label{font-weight:bold;display:inline-block;width:250px}.summary-value{color:#0078d4;font-weight:bold}table{border-collapse:collapse;width:100%;background-color:white;box-shadow:0 2px 4px rgba(0,0,0,0.1)}th{background-color:#0078d4;color:white;padding:12px;text-align:left}td{padding:10px;border-bottom:1px solid #ddd}tr:hover{background-color:#f5f5f5}.cost{color:#d13438;font-weight:bold}.warning{color:#ff8c00}.success{color:#107c10}.blocked{background-color:#fff4ce;padding:10px;border-left:4px solid #ff8c00;margin:10px 0}</style></head><body><h1>Azure Idle Resources Report</h1><p>Generated: $($summary.ScanStartTime)</p>")
