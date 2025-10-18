@@ -673,7 +673,7 @@ if ($allIdleResources.Count -gt 0) {
     $html = $html + "<div class='summary-item'><span class='summary-label'>Estimated Annual Savings:</span> <span class='cost'>USD " + $annualAmount + "</span></div></div>"
     
     $html = $html + "<h2>Idle Resources Details</h2>"
-    $html = $html + "<table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Status</th><th>Monthly Cost</th><th>Annual Cost</th><th>Recommendation</th></tr>"
+    $html = $html + "<table><tr><th>Subscription</th><th>Resource Type</th><th>Resource Name</th><th>Resource Group</th><th>Location</th><th>Status</th><th>Size</th><th>Monthly Cost</th><th>Annual Cost</th><th>Reason</th><th>Recommendation</th><th>Tags</th></tr>"
     
     foreach ($resource in ($allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending)) {
         $monthlyCost = [math]::Round($resource.EstimatedMonthlyCost, 2)
@@ -684,10 +684,14 @@ if ($allIdleResources.Count -gt 0) {
         $html = $html + "<td>" + $resource.ResourceType + "</td>"
         $html = $html + "<td>" + $resource.ResourceName + "</td>"
         $html = $html + "<td>" + $resource.ResourceGroup + "</td>"
+        $html = $html + "<td>" + $resource.Location + "</td>"
         $html = $html + "<td>" + $resource.Status + "</td>"
+        $html = $html + "<td>" + $resource.Size + "</td>"
         $html = $html + "<td>USD " + $monthlyCost + "</td>"
         $html = $html + "<td>USD " + $annualCost + "</td>"
+        $html = $html + "<td>" + $resource.Reason + "</td>"
         $html = $html + "<td>" + $resource.Recommendation + "</td>"
+        $html = $html + "<td>" + $resource.Tags + "</td>"
         $html = $html + "</tr>"
     }
     
