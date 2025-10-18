@@ -1016,4 +1016,3 @@ Write-Host "================================================================" -F
 Write-Host "  SCAN COMPLETE" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
-
