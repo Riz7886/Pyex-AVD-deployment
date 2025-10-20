@@ -222,7 +222,9 @@ foreach ($subscription in $subscriptionsToScan) {
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
             $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
-            $subResourceCount += $publicIPs.Count
+            if ($publicIPs) {
+                $subResourceCount += $publicIPs.Count
+            }
             $ipIdleCount = 0
             
             # FIX #1: Check if publicIPs array is not null and has items
@@ -260,8 +262,10 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
         try {
-            $nics = Get-AzNetworkInterface
-            $subResourceCount += $nics.Count
+            $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
+            if ($nics) {
+                $subResourceCount += $nics.Count
+            }
             $nicIdleCount = 0
             
             foreach ($nic in $nics) {
