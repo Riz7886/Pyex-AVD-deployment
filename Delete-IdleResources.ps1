@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Red
 Write-Host "  AZURE IDLE RESOURCES DELETION TOOL" -ForegroundColor Red
-Write-Host "  DANGER: THIS SCRIPT DELETES RESOURCES PERMANENTLY!" -ForegroundColor Red
+Write-Host "  DANGER: THIS SCRIPT DELETES RESOURCES PERMANENTLY" -ForegroundColor Red
 Write-Host "================================================================" -ForegroundColor Red
 Write-Host ""
 
@@ -59,7 +59,7 @@ Write-Host "Step 2: Discovering Subscriptions" -ForegroundColor Yellow
 $allSubscriptions = @(Get-AzSubscription)
 
 if ($allSubscriptions.Count -eq 0) {
-    Write-Log "ERROR: No subscriptions found!" "ERROR"
+    Write-Log "ERROR: No subscriptions found" "ERROR"
     exit 1
 }
 
@@ -106,7 +106,6 @@ Write-Log "Will process $($subscriptionsToProcess.Count) subscription(s)" "INFO"
 Write-Host ""
 
 $allIdleResources = @()
-$deletionQueue = @()
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
@@ -352,7 +351,7 @@ Write-Host "================================================================" -F
 Write-Host ""
 
 if ($allIdleResources.Count -eq 0) {
-    Write-Log "No idle resources found across all subscriptions!" "SUCCESS"
+    Write-Log "No idle resources found across all subscriptions" "SUCCESS"
     Write-Host ""
     exit 0
 }
@@ -374,7 +373,7 @@ Write-Host "================================================================" -F
 Write-Host "  TEST MODE: DELETE ONE RESOURCE" -ForegroundColor Yellow
 Write-Host "================================================================" -ForegroundColor Red
 Write-Host ""
-Write-Host "Before deleting all resources, let's test with ONE resource first." -ForegroundColor Yellow
+Write-Host "Before deleting all resources, lets test with ONE resource first." -ForegroundColor Yellow
 Write-Host ""
 
 $testResource = $allIdleResources | Sort-Object -Property EstimatedMonthlyCost -Descending | Select-Object -First 1
@@ -390,7 +389,7 @@ Write-Host ""
 Write-Host "This is the highest-cost idle resource." -ForegroundColor Yellow
 Write-Host ""
 
-$confirmTest = Read-Host "Do you want to DELETE this test resource? (Type 'YES' to confirm)"
+$confirmTest = Read-Host "Do you want to DELETE this test resource? (Type YES to confirm)"
 
 if ($confirmTest -ne "YES") {
     Write-Log "Test deletion cancelled by user" "WARNING"
@@ -449,7 +448,7 @@ try {
     if ($deleteSuccess) {
         Write-Log "SUCCESS: Deleted test resource: $($testResource.ResourceName)" "SUCCESS"
         Write-Host ""
-        Write-Host "✓ Test deletion successful!" -ForegroundColor Green
+        Write-Host "Test deletion successful" -ForegroundColor Green
         Write-Host ""
     }
     
@@ -476,10 +475,10 @@ Write-Host ""
 Write-Host "Remaining Idle Resources: $($remainingResources.Count)" -ForegroundColor Yellow
 Write-Host "Estimated Monthly Savings: USD $([math]::Round(($remainingResources | Measure-Object -Property EstimatedMonthlyCost -Sum).Sum, 2))" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "THIS WILL DELETE ALL IDLE RESOURCES IN ALL SELECTED SUBSCRIPTIONS!" -ForegroundColor Red
+Write-Host "THIS WILL DELETE ALL IDLE RESOURCES IN ALL SELECTED SUBSCRIPTIONS" -ForegroundColor Red
 Write-Host ""
 
-$confirmAll = Read-Host "Do you want to DELETE ALL remaining idle resources? (Type 'DELETE ALL' to confirm)"
+$confirmAll = Read-Host "Do you want to DELETE ALL remaining idle resources? (Type DELETE ALL to confirm)"
 
 if ($confirmAll -ne "DELETE ALL") {
     Write-Log "Bulk deletion cancelled by user" "WARNING"
