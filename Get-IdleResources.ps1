@@ -219,16 +219,14 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
-            $publicIPs = @()
-            $ipCount = 0
-            $ipIdleCount = 0
-            $ipCount = 0
-            $ipIdleCount = 0
             $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
+            if ($null -eq $publicIPs) { $publicIPs = @() }
             
-            if ($publicIPs) {
-                $ipCount = $publicIPs.Count
-                $subResourceCount += $ipCount
+            $ipCount = $publicIPs.Count
+            $ipIdleCount = 0
+            $subResourceCount += $ipCount
+            
+            if ($ipCount -gt 0) {
                 
                 foreach ($ip in $publicIPs) {
                     if ($ip.IpConfiguration -eq $null) {
@@ -263,16 +261,14 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
         try {
-            $nics = @()
-            $nicCount = 0
-            $nicIdleCount = 0
-            $nicCount = 0
-            $nicIdleCount = 0
             $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
+            if ($null -eq $nics) { $nics = @() }
             
-            if ($nics) {
-                $nicCount = $nics.Count
-                $subResourceCount += $nicCount
+            $nicCount = $nics.Count
+            $nicIdleCount = 0
+            $subResourceCount += $nicCount
+            
+            if ($nicCount -gt 0) {
                 
                 foreach ($nic in $nics) {
                     if ($nic.VirtualMachine -eq $null) {
@@ -432,13 +428,13 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
         try {
-            $sqlServers = @()
-            $sqlIdleCount = 0
             $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
-            $sqlIdleCount = 0
+            if ($null -eq $sqlServers) { $sqlServers = @() }
             
-            if ($sqlServers) {
-                $subResourceCount += $sqlServers.Count
+            $sqlIdleCount = 0
+            $subResourceCount += $sqlServers.Count
+            
+            if ($sqlServers.Count -gt 0) {
                 
                 foreach ($sqlServer in $sqlServers) {
                     $databases = @(Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.DatabaseName -ne "master" })
@@ -675,4 +671,5 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Scan complete. Review all reports in: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
+
 
