@@ -218,6 +218,9 @@ foreach ($subscription in $subscriptionsToScan) {
         }
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
+        $publicIPs = @()
+        $ipCount = 0
+        $ipIdleCount = 0
         try {
             $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
             if ($null -eq $publicIPs) { $publicIPs = @() }
@@ -260,6 +263,9 @@ foreach ($subscription in $subscriptionsToScan) {
         }
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
+        $nics = @()
+        $nicCount = 0
+        $nicIdleCount = 0
         try {
             $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
             if ($null -eq $nics) { $nics = @() }
@@ -313,7 +319,7 @@ foreach ($subscription in $subscriptionsToScan) {
                     $blobCount = 0
                     
                     try {
-                        $containers = @(Get-AzStorageContainer -Context $storage.Context -ErrorAction Stop -MaxResults 1 -TimeoutInSeconds 5)
+                        $containers = @(Get-AzStorageContainer -Context $storage.Context -ErrorAction Stop -MaxResults 1 -MaxClientTimeout 5)
                         if ($containers.Count -eq 0) {
                             $storageIdleCount++
                             $storageTier = $storage.Sku.Name
@@ -427,6 +433,8 @@ foreach ($subscription in $subscriptionsToScan) {
         }
         
         Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
+        $sqlServers = @()
+        $sqlIdleCount = 0
         try {
             $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
             if ($null -eq $sqlServers) { $sqlServers = @() }
@@ -671,6 +679,7 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Scan complete. Review all reports in: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
+
 
 
 
