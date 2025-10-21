@@ -24,7 +24,6 @@ Write-Host ""
 Write-Host "Step 1: Azure Authentication" -ForegroundColor Yellow
 Write-Host ""
 
-# WEEKEND FIX: Simple check and connect
 $context = Get-AzContext -ErrorAction SilentlyContinue
 if (!$context) {
     Write-Host "Connecting to Azure..." -ForegroundColor Yellow
@@ -48,7 +47,6 @@ if ($allSubscriptions.Count -eq 0) {
 Write-Host "Found $($allSubscriptions.Count) subscription(s) across all accessible tenants" -ForegroundColor Green
 Write-Host ""
 
-# Group by tenant and display
 $tenantGroups = $allSubscriptions | Group-Object -Property TenantId
 Write-Host "Available Tenants: $($tenantGroups.Count)" -ForegroundColor Cyan
 foreach ($tenantGroup in $tenantGroups) {
@@ -221,37 +219,36 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
-            $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
-            if ($publicIPs) {
+            $publicIPs = @()
+            $tempIPs = Get-AzPublicIpAddress -ErrorAction SilentlyContinue
+            if ($tempIPs) {
+                $publicIPs = @($tempIPs)
                 $subResourceCount += $publicIPs.Count
             }
             $ipIdleCount = 0
             
-            # FIX #1: Check if publicIPs array is not null and has items
-            if ($publicIPs -and $publicIPs.Count -gt 0) {
-                foreach ($ip in $publicIPs) {
-                    if ($ip.IpConfiguration -eq $null) {
-                        $ipIdleCount++
-                        $ipSku = $ip.Sku.Name
-                        $estimatedCost = if ($ipSku -eq "Standard") { 4 } else { 3 }
-                        $subTotalCost += $estimatedCost
-                        
-                        $subIdleResources += [PSCustomObject]@{
-                            SubscriptionName = $subscription.Name
-                            SubscriptionId = $subscription.Id
-                            TenantId = $subscription.TenantId
-                            ResourceType = "Public IP Address"
-                            ResourceName = $ip.Name
-                            ResourceGroup = $ip.ResourceGroupName
-                            Location = $ip.Location
-                            Status = "Unassigned"
-                            Size = "$ipSku SKU"
-                            EstimatedMonthlyCost = $estimatedCost
-                            EstimatedAnnualCost = $estimatedCost * 12
-                            Reason = "Public IP not assigned to any resource"
-                            Recommendation = "Delete if not needed - incurs monthly charge"
-                            Tags = ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; "
-                        }
+            foreach ($ip in $publicIPs) {
+                if ($ip -and $ip.IpConfiguration -eq $null) {
+                    $ipIdleCount++
+                    $ipSku = $ip.Sku.Name
+                    $estimatedCost = if ($ipSku -eq "Standard") { 4 } else { 3 }
+                    $subTotalCost += $estimatedCost
+                    
+                    $subIdleResources += [PSCustomObject]@{
+                        SubscriptionName = $subscription.Name
+                        SubscriptionId = $subscription.Id
+                        TenantId = $subscription.TenantId
+                        ResourceType = "Public IP Address"
+                        ResourceName = $ip.Name
+                        ResourceGroup = $ip.ResourceGroupName
+                        Location = $ip.Location
+                        Status = "Unassigned"
+                        Size = "$ipSku SKU"
+                        EstimatedMonthlyCost = $estimatedCost
+                        EstimatedAnnualCost = $estimatedCost * 12
+                        Reason = "Public IP not assigned to any resource"
+                        Recommendation = "Delete if not needed - incurs monthly charge"
+                        Tags = ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; "
                     }
                 }
             }
@@ -262,14 +259,16 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
         try {
-            $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
-            if ($nics) {
+            $nics = @()
+            $tempNICs = Get-AzNetworkInterface -ErrorAction SilentlyContinue
+            if ($tempNICs) {
+                $nics = @($tempNICs)
                 $subResourceCount += $nics.Count
             }
             $nicIdleCount = 0
             
             foreach ($nic in $nics) {
-                if ($nic.VirtualMachine -eq $null) {
+                if ($nic -and $nic.VirtualMachine -eq $null) {
                     $nicIdleCount++
                     $estimatedCost = 2
                     $subTotalCost += $estimatedCost
@@ -299,33 +298,40 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Storage Accounts..." -ForegroundColor Yellow
         try {
-            $storageAccounts = Get-AzStorageAccount
-            $subResourceCount += $storageAccounts.Count
+            $storageAccounts = Get-AzStorageAccount -ErrorAction SilentlyContinue
+            if ($storageAccounts) {
+                $subResourceCount += $storageAccounts.Count
+            }
             $storageIdleCount = 0
             
             foreach ($storage in $storageAccounts) {
-                # FIX #2: Wrap each storage account analysis in try-catch
                 try {
-                    $ctx = $storage.Context
-                    $containers = @(Get-AzStorageContainer -Context $ctx -ErrorAction SilentlyContinue)
-                    $totalSize = 0
+                    $sizeGB = 0
                     $blobCount = 0
                     
-                    if ($containers -and $containers.Count -gt 0) {
-                        foreach ($container in $containers) {
-                            $blobs = @(Get-AzStorageBlob -Container $container.Name -Context $ctx -ErrorAction SilentlyContinue)
-                            if ($blobs) {
-                                $blobCount += $blobs.Count
-                                foreach ($blob in $blobs) {
-                                    if ($blob.Length) {
-                                        $totalSize += $blob.Length
+                    try {
+                        $ctx = $storage.Context
+                        if ($ctx) {
+                            $containers = @(Get-AzStorageContainer -Context $ctx -ErrorAction SilentlyContinue)
+                            
+                            foreach ($container in $containers) {
+                                try {
+                                    $blobs = @(Get-AzStorageBlob -Container $container.Name -Context $ctx -ErrorAction Stop)
+                                    $blobCount += $blobs.Count
+                                    foreach ($blob in $blobs) {
+                                        if ($blob.Length) {
+                                            $sizeGB += $blob.Length
+                                        }
                                     }
+                                } catch {
+                                    # Skip containers we can't read
                                 }
                             }
+                            $sizeGB = [math]::Round($sizeGB / 1GB, 2)
                         }
+                    } catch {
+                        # Can't access storage context - skip silently
                     }
-                    
-                    $sizeGB = [math]::Round($totalSize / 1GB, 2)
                     
                     if ($sizeGB -lt 0.1 -and $blobCount -lt 5) {
                         $storageIdleCount++
@@ -355,8 +361,7 @@ foreach ($subscription in $subscriptionsToScan) {
                         }
                     }
                 } catch {
-                    # FIX #2: Better error handling for individual storage accounts
-                    Write-Host "  Unable to analyze storage: $($storage.StorageAccountName) (Permissions or access issue)" -ForegroundColor Gray
+                    # Skip storage accounts we can't analyze - no error message
                 }
             }
             Write-Host "  Found: $($storageAccounts.Count) Storage Accounts | Empty: $storageIdleCount" -ForegroundColor $(if($storageIdleCount -gt 0){"Yellow"}else{"Green"})
@@ -446,38 +451,35 @@ foreach ($subscription in $subscriptionsToScan) {
         Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
         try {
             $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
-            $subResourceCount += $sqlServers.Count
+            if ($sqlServers) {
+                $subResourceCount += $sqlServers.Count
+            }
             $sqlIdleCount = 0
             
-            # FIX #3: Check if sqlServers array is not null and has items
-            if ($sqlServers -and $sqlServers.Count -gt 0) {
-                foreach ($sqlServer in $sqlServers) {
-                    $databases = @(Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.DatabaseName -ne "master" })
-                    
-                    if ($databases -and $databases.Count -gt 0) {
-                        foreach ($db in $databases) {
-                            if ($db.Status -eq "Paused" -or $db.CurrentServiceObjectiveName -like "*DW*") {
-                                $sqlIdleCount++
-                                $estimatedCost = 100
-                                $subTotalCost += $estimatedCost
-                                
-                                $subIdleResources += [PSCustomObject]@{
-                                    SubscriptionName = $subscription.Name
-                                    SubscriptionId = $subscription.Id
-                                    TenantId = $subscription.TenantId
-                                    ResourceType = "SQL Database"
-                                    ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
-                                    ResourceGroup = $sqlServer.ResourceGroupName
-                                    Location = $sqlServer.Location
-                                    Status = $db.Status
-                                    Size = $db.CurrentServiceObjectiveName
-                                    EstimatedMonthlyCost = $estimatedCost
-                                    EstimatedAnnualCost = $estimatedCost * 12
-                                    Reason = "Database is paused or idle"
-                                    Recommendation = "Delete if no longer needed"
-                                    Tags = ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; "
-                                }
-                            }
+            foreach ($sqlServer in $sqlServers) {
+                $databases = @(Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.DatabaseName -ne "master" })
+                
+                foreach ($db in $databases) {
+                    if ($db -and ($db.Status -eq "Paused" -or $db.CurrentServiceObjectiveName -like "*DW*")) {
+                        $sqlIdleCount++
+                        $estimatedCost = 100
+                        $subTotalCost += $estimatedCost
+                        
+                        $subIdleResources += [PSCustomObject]@{
+                            SubscriptionName = $subscription.Name
+                            SubscriptionId = $subscription.Id
+                            TenantId = $subscription.TenantId
+                            ResourceType = "SQL Database"
+                            ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
+                            ResourceGroup = $sqlServer.ResourceGroupName
+                            Location = $sqlServer.Location
+                            Status = $db.Status
+                            Size = $db.CurrentServiceObjectiveName
+                            EstimatedMonthlyCost = $estimatedCost
+                            EstimatedAnnualCost = $estimatedCost * 12
+                            Reason = "Database is paused or idle"
+                            Recommendation = "Delete if no longer needed"
+                            Tags = ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; "
                         }
                     }
                 }
@@ -489,7 +491,6 @@ foreach ($subscription in $subscriptionsToScan) {
         
         $allIdleResources += $subIdleResources
         
-        # NEW FEATURE: Create separate CSV file for THIS subscription
         if ($subIdleResources.Count -gt 0) {
             $subName = $subscription.Name -replace '[^a-zA-Z0-9]', '_'
             $subCsvPath = Join-Path $OutputPath "IdleResources-$subName-$timestamp.csv"
@@ -502,7 +503,6 @@ foreach ($subscription in $subscriptionsToScan) {
             $csvData | Export-Csv -Path $subCsvPath -NoTypeInformation -Force
             Write-Host "  Subscription CSV: $subCsvPath" -ForegroundColor Magenta
             
-            # NEW FEATURE: Create separate HTML file for THIS subscription
             $subHtmlPath = Join-Path $OutputPath "IdleResources-$subName-$timestamp.html"
             $subMonthlyCost = [math]::Round($subTotalCost, 2)
             $subAnnualCost = [math]::Round($subTotalCost * 12, 2)
@@ -550,7 +550,6 @@ foreach ($subscription in $subscriptionsToScan) {
             [System.IO.File]::WriteAllText($subHtmlPath, $subHtml)
             Write-Host "  Subscription HTML: $subHtmlPath" -ForegroundColor Magenta
             
-            # NEW FEATURE: Auto-open THIS subscription's HTML report
             Start-Process $subHtmlPath
         }
         
@@ -571,7 +570,7 @@ foreach ($subscription in $subscriptionsToScan) {
         }
         
         Write-Host ""
-        Write-Host "  Subscription Summary: $($subIdleResources.Count) idle resources | Potential Savings: `$$([math]::Round($subTotalCost, 2))/month" -ForegroundColor $(if($subIdleResources.Count -gt 0){"Yellow"}else{"Green"})
+        Write-Host "  Subscription Summary: $($subIdleResources.Count) idle resources | Potential Savings: USD $([math]::Round($subTotalCost, 2))/month" -ForegroundColor $(if($subIdleResources.Count -gt 0){"Yellow"}else{"Green"})
         
     } catch {
         Write-Host "  ERROR scanning subscription: $($_.Exception.Message)" -ForegroundColor Red
@@ -591,12 +590,11 @@ Write-Host "  Scan Duration: $($summary.ScanStartTime) to $($summary.ScanEndTime
 Write-Host "  Subscriptions Scanned: $($summary.TotalSubscriptionsScanned)" -ForegroundColor White
 Write-Host "  Total Resources Scanned: $($summary.TotalResourcesScanned)" -ForegroundColor White
 Write-Host "  Total Idle Resources Found: $($summary.TotalIdleResources)" -ForegroundColor Yellow
-Write-Host "  Estimated Monthly Savings: `$$([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Yellow
-Write-Host "  Estimated Annual Savings: `$$([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Yellow
+Write-Host "  Estimated Monthly Savings: USD $([math]::Round($summary.TotalMonthlyCost, 2))" -ForegroundColor Yellow
+Write-Host "  Estimated Annual Savings: USD $([math]::Round($summary.TotalAnnualCost, 2))" -ForegroundColor Yellow
 Write-Host ""
 
 if ($allIdleResources.Count -gt 0) {
-    # Combined CSV report (all subscriptions)
     $detailedReportPath = Join-Path $OutputPath "IdleResources-AllSubscriptions-$timestamp.csv"
     
     $csvData = $allIdleResources | Select-Object SubscriptionName, SubscriptionId, TenantId, ResourceType, ResourceName, ResourceGroup, Location, Status, Size, 
@@ -611,7 +609,6 @@ if ($allIdleResources.Count -gt 0) {
     $summary | ConvertTo-Json -Depth 10 | Out-File $summaryReportPath
     Write-Host "Summary JSON Report: $summaryReportPath" -ForegroundColor Green
     
-    # Combined HTML report (all subscriptions)
     $htmlReportPath = Join-Path $OutputPath "IdleResources-AllSubscriptions-$timestamp.html"
     $monthlySavings = [math]::Round($summary.TotalMonthlyCost, 2)
     $annualSavings = [math]::Round($summary.TotalAnnualCost, 2)
@@ -686,7 +683,7 @@ if ($allIdleResources.Count -gt 0) {
 
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host "  SEPARATE FILES CREATED FOR EACH SUBSCRIPTION!" -ForegroundColor Green
+Write-Host "  SEPARATE FILES CREATED FOR EACH SUBSCRIPTION" -ForegroundColor Green
 Write-Host "  Each subscription has its own CSV and HTML report" -ForegroundColor Green
 Write-Host "  HTML reports automatically opened in browser" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
