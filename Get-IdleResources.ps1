@@ -219,149 +219,125 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
-            $publicIPs = @()
-            $tempIPs = Get-AzPublicIpAddress -ErrorAction SilentlyContinue
-            if ($tempIPs) {
-                $publicIPs = @($tempIPs)
-                $subResourceCount += $publicIPs.Count
-            }
+            $ipCount = 0
             $ipIdleCount = 0
+            $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
             
-            foreach ($ip in $publicIPs) {
-                if ($ip -and $ip.IpConfiguration -eq $null) {
-                    $ipIdleCount++
-                    $ipSku = $ip.Sku.Name
-                    $estimatedCost = if ($ipSku -eq "Standard") { 4 } else { 3 }
-                    $subTotalCost += $estimatedCost
-                    
-                    $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
-                        ResourceType = "Public IP Address"
-                        ResourceName = $ip.Name
-                        ResourceGroup = $ip.ResourceGroupName
-                        Location = $ip.Location
-                        Status = "Unassigned"
-                        Size = "$ipSku SKU"
-                        EstimatedMonthlyCost = $estimatedCost
-                        EstimatedAnnualCost = $estimatedCost * 12
-                        Reason = "Public IP not assigned to any resource"
-                        Recommendation = "Delete if not needed - incurs monthly charge"
-                        Tags = ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; "
-                    }
-                }
-            }
-            Write-Host "  Found: $($publicIPs.Count) Public IPs | Unassigned: $ipIdleCount" -ForegroundColor $(if($ipIdleCount -gt 0){"Yellow"}else{"Green"})
-        } catch {
-            Write-Host "  Error checking Public IPs: $($_.Exception.Message)" -ForegroundColor Red
-        }
-        
-        Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
-        try {
-            $nics = @()
-            $tempNICs = Get-AzNetworkInterface -ErrorAction SilentlyContinue
-            if ($tempNICs) {
-                $nics = @($tempNICs)
-                $subResourceCount += $nics.Count
-            }
-            $nicIdleCount = 0
-            
-            foreach ($nic in $nics) {
-                if ($nic -and $nic.VirtualMachine -eq $null) {
-                    $nicIdleCount++
-                    $estimatedCost = 2
-                    $subTotalCost += $estimatedCost
-                    
-                    $subIdleResources += [PSCustomObject]@{
-                        SubscriptionName = $subscription.Name
-                        SubscriptionId = $subscription.Id
-                        TenantId = $subscription.TenantId
-                        ResourceType = "Network Interface"
-                        ResourceName = $nic.Name
-                        ResourceGroup = $nic.ResourceGroupName
-                        Location = $nic.Location
-                        Status = "Unattached"
-                        Size = "N/A"
-                        EstimatedMonthlyCost = $estimatedCost
-                        EstimatedAnnualCost = $estimatedCost * 12
-                        Reason = "NIC not attached to any VM"
-                        Recommendation = "Delete if VM was removed"
-                        Tags = ($nic.Tags.Keys | ForEach-Object { "$_=$($nic.Tags[$_])" }) -join "; "
-                    }
-                }
-            }
-            Write-Host "  Found: $($nics.Count) NICs | Unattached: $nicIdleCount" -ForegroundColor $(if($nicIdleCount -gt 0){"Yellow"}else{"Green"})
-        } catch {
-            Write-Host "  Error checking NICs: $($_.Exception.Message)" -ForegroundColor Red
-        }
-        
-        Write-Host "Checking Storage Accounts..." -ForegroundColor Yellow
-        try {
-            $storageAccounts = Get-AzStorageAccount -ErrorAction SilentlyContinue
-            if ($storageAccounts) {
-                $subResourceCount += $storageAccounts.Count
-            }
-            $storageIdleCount = 0
-            
-            foreach ($storage in $storageAccounts) {
-                try {
-                    $sizeGB = 0
-                    $blobCount = 0
-                    
-                    try {
-                        $ctx = $storage.Context
-                        if ($ctx) {
-                            $containers = @(Get-AzStorageContainer -Context $ctx -ErrorAction SilentlyContinue)
-                            
-                            foreach ($container in $containers) {
-                                try {
-                                    $blobs = @(Get-AzStorageBlob -Container $container.Name -Context $ctx -ErrorAction Stop)
-                                    $blobCount += $blobs.Count
-                                    foreach ($blob in $blobs) {
-                                        if ($blob.Length) {
-                                            $sizeGB += $blob.Length
-                                        }
-                                    }
-                                } catch {
-                                    # Skip containers we can't read
-                                }
-                            }
-                            $sizeGB = [math]::Round($sizeGB / 1GB, 2)
-                        }
-                    } catch {
-                        # Can't access storage context - skip silently
-                    }
-                    
-                    if ($sizeGB -lt 0.1 -and $blobCount -lt 5) {
-                        $storageIdleCount++
-                        $storageTier = $storage.Sku.Name
-                        $estimatedCost = switch ($storageTier) {
-                            "Premium_LRS" { 15 }
-                            "Standard_GRS" { 8 }
-                            default { 5 }
-                        }
+            if ($publicIPs) {
+                $ipCount = $publicIPs.Count
+                $subResourceCount += $ipCount
+                
+                foreach ($ip in $publicIPs) {
+                    if ($ip.IpConfiguration -eq $null) {
+                        $ipIdleCount++
+                        $ipSku = $ip.Sku.Name
+                        $estimatedCost = if ($ipSku -eq "Standard") { 4 } else { 3 }
                         $subTotalCost += $estimatedCost
                         
                         $subIdleResources += [PSCustomObject]@{
                             SubscriptionName = $subscription.Name
                             SubscriptionId = $subscription.Id
                             TenantId = $subscription.TenantId
-                            ResourceType = "Storage Account"
-                            ResourceName = $storage.StorageAccountName
-                            ResourceGroup = $storage.ResourceGroupName
-                            Location = $storage.Location
-                            Status = "Empty/Minimal Data"
-                            Size = "$sizeGB GB | $blobCount blobs | $storageTier"
+                            ResourceType = "Public IP Address"
+                            ResourceName = $ip.Name
+                            ResourceGroup = $ip.ResourceGroupName
+                            Location = $ip.Location
+                            Status = "Unassigned"
+                            Size = "$ipSku SKU"
                             EstimatedMonthlyCost = $estimatedCost
                             EstimatedAnnualCost = $estimatedCost * 12
-                            Reason = "Storage account empty or has minimal data"
-                            Recommendation = "Delete if not needed - base charge applies"
-                            Tags = ($storage.Tags.Keys | ForEach-Object { "$_=$($storage.Tags[$_])" }) -join "; "
+                            Reason = "Public IP not assigned to any resource"
+                            Recommendation = "Delete if not needed - incurs monthly charge"
+                            Tags = ($ip.Tags.Keys | ForEach-Object { "$_=$($ip.Tags[$_])" }) -join "; "
                         }
                     }
-                } catch {
-                    # Skip storage accounts we can't analyze - no error message
+                }
+            }
+            Write-Host "  Found: $ipCount Public IPs | Unassigned: $ipIdleCount" -ForegroundColor $(if($ipIdleCount -gt 0){"Yellow"}else{"Green"})
+        } catch {
+            Write-Host "  Error checking Public IPs: $($_.Exception.Message)" -ForegroundColor Red
+        }
+        
+        Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
+        try {
+            $nicCount = 0
+            $nicIdleCount = 0
+            $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
+            
+            if ($nics) {
+                $nicCount = $nics.Count
+                $subResourceCount += $nicCount
+                
+                foreach ($nic in $nics) {
+                    if ($nic.VirtualMachine -eq $null) {
+                        $nicIdleCount++
+                        $estimatedCost = 2
+                        $subTotalCost += $estimatedCost
+                        
+                        $subIdleResources += [PSCustomObject]@{
+                            SubscriptionName = $subscription.Name
+                            SubscriptionId = $subscription.Id
+                            TenantId = $subscription.TenantId
+                            ResourceType = "Network Interface"
+                            ResourceName = $nic.Name
+                            ResourceGroup = $nic.ResourceGroupName
+                            Location = $nic.Location
+                            Status = "Unattached"
+                            Size = "N/A"
+                            EstimatedMonthlyCost = $estimatedCost
+                            EstimatedAnnualCost = $estimatedCost * 12
+                            Reason = "NIC not attached to any VM"
+                            Recommendation = "Delete if VM was removed"
+                            Tags = ($nic.Tags.Keys | ForEach-Object { "$_=$($nic.Tags[$_])" }) -join "; "
+                        }
+                    }
+                }
+            }
+            Write-Host "  Found: $nicCount NICs | Unattached: $nicIdleCount" -ForegroundColor $(if($nicIdleCount -gt 0){"Yellow"}else{"Green"})
+        } catch {
+            Write-Host "  Error checking NICs: $($_.Exception.Message)" -ForegroundColor Red
+        }
+        
+        Write-Host "Checking Storage Accounts..." -ForegroundColor Yellow
+        try {
+            $storageAccounts = @(Get-AzStorageAccount -ErrorAction SilentlyContinue)
+            $storageIdleCount = 0
+            
+            if ($storageAccounts) {
+                $subResourceCount += $storageAccounts.Count
+                
+                foreach ($storage in $storageAccounts) {
+                    $sizeGB = 0
+                    $blobCount = 0
+                    
+                    try {
+                        $containers = @(Get-AzStorageContainer -Context $storage.Context -ErrorAction Stop -MaxResults 1 -TimeoutInSeconds 5)
+                        if ($containers.Count -eq 0) {
+                            $storageIdleCount++
+                            $storageTier = $storage.Sku.Name
+                            $estimatedCost = 5
+                            $subTotalCost += $estimatedCost
+                            
+                            $subIdleResources += [PSCustomObject]@{
+                                SubscriptionName = $subscription.Name
+                                SubscriptionId = $subscription.Id
+                                TenantId = $subscription.TenantId
+                                ResourceType = "Storage Account"
+                                ResourceName = $storage.StorageAccountName
+                                ResourceGroup = $storage.ResourceGroupName
+                                Location = $storage.Location
+                                Status = "Empty"
+                                Size = "0 GB | 0 blobs | $storageTier"
+                                EstimatedMonthlyCost = $estimatedCost
+                                EstimatedAnnualCost = $estimatedCost * 12
+                                Reason = "Storage account is empty"
+                                Recommendation = "Delete if not needed - base charge applies"
+                                Tags = ($storage.Tags.Keys | ForEach-Object { "$_=$($storage.Tags[$_])" }) -join "; "
+                            }
+                        }
+                    } catch {
+                        # Skip storage accounts we cannot access quickly
+                    }
                 }
             }
             Write-Host "  Found: $($storageAccounts.Count) Storage Accounts | Empty: $storageIdleCount" -ForegroundColor $(if($storageIdleCount -gt 0){"Yellow"}else{"Green"})
@@ -451,35 +427,36 @@ foreach ($subscription in $subscriptionsToScan) {
         Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
         try {
             $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
-            if ($sqlServers) {
-                $subResourceCount += $sqlServers.Count
-            }
             $sqlIdleCount = 0
             
-            foreach ($sqlServer in $sqlServers) {
-                $databases = @(Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.DatabaseName -ne "master" })
+            if ($sqlServers) {
+                $subResourceCount += $sqlServers.Count
                 
-                foreach ($db in $databases) {
-                    if ($db -and ($db.Status -eq "Paused" -or $db.CurrentServiceObjectiveName -like "*DW*")) {
-                        $sqlIdleCount++
-                        $estimatedCost = 100
-                        $subTotalCost += $estimatedCost
-                        
-                        $subIdleResources += [PSCustomObject]@{
-                            SubscriptionName = $subscription.Name
-                            SubscriptionId = $subscription.Id
-                            TenantId = $subscription.TenantId
-                            ResourceType = "SQL Database"
-                            ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
-                            ResourceGroup = $sqlServer.ResourceGroupName
-                            Location = $sqlServer.Location
-                            Status = $db.Status
-                            Size = $db.CurrentServiceObjectiveName
-                            EstimatedMonthlyCost = $estimatedCost
-                            EstimatedAnnualCost = $estimatedCost * 12
-                            Reason = "Database is paused or idle"
-                            Recommendation = "Delete if no longer needed"
-                            Tags = ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; "
+                foreach ($sqlServer in $sqlServers) {
+                    $databases = @(Get-AzSqlDatabase -ServerName $sqlServer.ServerName -ResourceGroupName $sqlServer.ResourceGroupName -ErrorAction SilentlyContinue | Where-Object { $_.DatabaseName -ne "master" })
+                    
+                    foreach ($db in $databases) {
+                        if ($db.Status -eq "Paused" -or $db.CurrentServiceObjectiveName -like "*DW*") {
+                            $sqlIdleCount++
+                            $estimatedCost = 100
+                            $subTotalCost += $estimatedCost
+                            
+                            $subIdleResources += [PSCustomObject]@{
+                                SubscriptionName = $subscription.Name
+                                SubscriptionId = $subscription.Id
+                                TenantId = $subscription.TenantId
+                                ResourceType = "SQL Database"
+                                ResourceName = "$($sqlServer.ServerName)/$($db.DatabaseName)"
+                                ResourceGroup = $sqlServer.ResourceGroupName
+                                Location = $sqlServer.Location
+                                Status = $db.Status
+                                Size = $db.CurrentServiceObjectiveName
+                                EstimatedMonthlyCost = $estimatedCost
+                                EstimatedAnnualCost = $estimatedCost * 12
+                                Reason = "Database is paused or idle"
+                                Recommendation = "Delete if no longer needed"
+                                Tags = ($db.Tags.Keys | ForEach-Object { "$_=$($db.Tags[$_])" }) -join "; "
+                            }
                         }
                     }
                 }
@@ -690,4 +667,3 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Scan complete. Review all reports in: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
-
