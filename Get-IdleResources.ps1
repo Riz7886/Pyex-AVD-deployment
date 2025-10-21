@@ -222,11 +222,11 @@ foreach ($subscription in $subscriptionsToScan) {
         $ipCount = 0
         $ipIdleCount = 0
         try {
-            $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
-            if ($null -eq $publicIPs) { $publicIPs = @() }
-            
+            $tempIPs = Get-AzPublicIpAddress -ErrorAction Stop
+            if ($null -ne $tempIPs) {
+                $publicIPs = @($tempIPs)
+            }
             $ipCount = $publicIPs.Count
-            $ipIdleCount = 0
             $subResourceCount += $ipCount
             
             if ($ipCount -gt 0) {
@@ -267,11 +267,11 @@ foreach ($subscription in $subscriptionsToScan) {
         $nicCount = 0
         $nicIdleCount = 0
         try {
-            $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
-            if ($null -eq $nics) { $nics = @() }
-            
+            $tempNICs = Get-AzNetworkInterface -ErrorAction Stop
+            if ($null -ne $tempNICs) {
+                $nics = @($tempNICs)
+            }
             $nicCount = $nics.Count
-            $nicIdleCount = 0
             $subResourceCount += $nicCount
             
             if ($nicCount -gt 0) {
@@ -436,10 +436,10 @@ foreach ($subscription in $subscriptionsToScan) {
         $sqlServers = @()
         $sqlIdleCount = 0
         try {
-            $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
-            if ($null -eq $sqlServers) { $sqlServers = @() }
-            
-            $sqlIdleCount = 0
+            $tempSQL = Get-AzSqlServer -ErrorAction Stop
+            if ($null -ne $tempSQL) {
+                $sqlServers = @($tempSQL)
+            }
             $subResourceCount += $sqlServers.Count
             
             if ($sqlServers.Count -gt 0) {
@@ -679,6 +679,7 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Scan complete. Review all reports in: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
+
 
 
 
