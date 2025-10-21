@@ -219,6 +219,9 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Public IP Addresses..." -ForegroundColor Yellow
         try {
+            $publicIPs = @()
+            $ipCount = 0
+            $ipIdleCount = 0
             $ipCount = 0
             $ipIdleCount = 0
             $publicIPs = @(Get-AzPublicIpAddress -ErrorAction SilentlyContinue)
@@ -260,6 +263,9 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking Network Interfaces..." -ForegroundColor Yellow
         try {
+            $nics = @()
+            $nicCount = 0
+            $nicIdleCount = 0
             $nicCount = 0
             $nicIdleCount = 0
             $nics = @(Get-AzNetworkInterface -ErrorAction SilentlyContinue)
@@ -426,6 +432,8 @@ foreach ($subscription in $subscriptionsToScan) {
         
         Write-Host "Checking SQL Databases..." -ForegroundColor Yellow
         try {
+            $sqlServers = @()
+            $sqlIdleCount = 0
             $sqlServers = @(Get-AzSqlServer -ErrorAction SilentlyContinue)
             $sqlIdleCount = 0
             
@@ -667,3 +675,4 @@ Write-Host "================================================================" -F
 Write-Host ""
 Write-Host "Scan complete. Review all reports in: $OutputPath" -ForegroundColor Cyan
 Write-Host ""
+
