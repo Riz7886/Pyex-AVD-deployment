@@ -19,30 +19,6 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 
 
-#region VPN Security Check
-# Import VPN detection module
-$vpnModulePath = Join-Path $PSScriptRoot "VPN-Detection-Module.ps1"
-if (Test-Path $vpnModulePath) {
-    . $vpnModulePath
-    # Require VPN connection before proceeding
-    Test-VPNConnection -Required
-} else {
-    Write-Host "WARNING: VPN detection module not found" -ForegroundColor Yellow
-    Write-Host "Proceeding without VPN check (not recommended for production)" -ForegroundColor Yellow
-    Write-Host ""
-}
-#endregion
-#region Azure Connection
-Write-Host "[1/9] Azure Authentication" -ForegroundColor Yellow
-$context = Get-AzContext -ErrorAction SilentlyContinue
-if (!$context) {
-    Write-Host "  Connecting to Azure..." -ForegroundColor Cyan
-    Connect-AzAccount | Out-Null
-}
-Write-Host "  Connected as: $((Get-AzContext).Account.Id)" -ForegroundColor Green
-Write-Host ""
-#endregion
-
 #region Find Bastion
 Write-Host "[2/9] Locating Azure Bastion" -ForegroundColor Yellow
 $bastions = Get-AzBastion
@@ -287,4 +263,5 @@ Write-Host "CLEANUP (when done):" -ForegroundColor Cyan
 Write-Host "  Remove-AzResourceGroup -Name $rgName -Force" -ForegroundColor Gray
 Write-Host ""
 #endregion
+
 
