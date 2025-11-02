@@ -6,13 +6,14 @@
     Detects if user is connected to Cisco AnyConnect VPN
     Used for END USER access, not admin deployment
 .EXAMPLE
+    . .\VPN-Detection-Module.ps1
     Test-VPNConnection -Informational
 #>
 
 function Test-VPNConnection {
     [CmdletBinding()]
     param(
-        [switch]$Informational  # Just show info, don't block
+        [switch]$Informational
     )
     
     Write-Host ""
@@ -47,12 +48,10 @@ function Test-VPNConnection {
     Write-Host ""
     
     if ($vpnConnected) {
-        Write-Host "  STATUS: VPN Connected - End users can access Bastion" -ForegroundColor Green
+        Write-Host "  STATUS: VPN Connected" -ForegroundColor Green
     } else {
         Write-Host "  STATUS: No VPN detected" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "  NOTE: This is OK for admin deployment tasks" -ForegroundColor Cyan
-        Write-Host "  End users will need VPN to connect to VMs via Bastion" -ForegroundColor Cyan
+        Write-Host "  NOTE: VPN not required for admin deployment" -ForegroundColor Cyan
     }
     
     Write-Host "============================================================" -ForegroundColor Cyan
@@ -60,5 +59,3 @@ function Test-VPNConnection {
     
     return $vpnConnected
 }
-
-Export-ModuleMember -Function Test-VPNConnection
