@@ -1,267 +1,286 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Deploy 2 Windows VMs for Bastion Testing with Optional Storage Account
+    Deploy 2 Windows VMs for Bastion with PyxHealth naming
 .DESCRIPTION
-    Creates 2 fully configured Windows Server VMs ready for Bastion
-    Now includes optional Azure Files storage account for FSLogix user profiles
+    Deploys 2 Windows Server 2022 VMs with PyxHealth naming convention
+    Designed to work with existing Bastion deployment
 .EXAMPLE
     .\Deploy-2-Windows-VMs-For-Bastion.ps1
+    .\Deploy-2-Windows-VMs-For-Bastion.ps1 -Location eastus -VMSize Standard_D2s_v3 -Force
 #>
+
+[CmdletBinding()]
+param(
+    [Parameter(HelpMessage="Azure region")]
+    [ValidateSet("centralus", "eastus", "westus", "eastus2", "westus2")]
+    [string]$Location = "centralus",
+    
+    [Parameter(HelpMessage="VM size")]
+    [ValidateSet("Standard_D2s_v3", "Standard_D4s_v3", "Standard_E4s_v3")]
+    [string]$VMSize = "Standard_D2s_v3",
+    
+    [Parameter(HelpMessage="Number of VMs to deploy")]
+    [ValidateRange(1, 10)]
+    [int]$VMCount = 2,
+    
+    [Parameter(HelpMessage="Skip confirmation prompts")]
+    [switch]$Force
+)
 
 $ErrorActionPreference = "Stop"
 
-Write-Host ""
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  DEPLOY 2 WINDOWS VMs FOR BASTION TESTING" -ForegroundColor Cyan
-Write-Host "  With Optional Storage Account for User Profiles" -ForegroundColor Cyan
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host ""
-
-
-#region Find Bastion
-Write-Host "[2/9] Locating Azure Bastion" -ForegroundColor Yellow
-$bastions = Get-AzBastion
-if ($bastions.Count -eq 0) {
-    Write-Host "  ERROR: No Bastion found!" -ForegroundColor Red
-    Write-Host "  Deploy Bastion first using the main script." -ForegroundColor Yellow
-    exit 1
-}
-
-if ($bastions.Count -eq 1) {
-    $bastion = $bastions[0]
-} else {
-    Write-Host "  Multiple Bastions found:" -ForegroundColor Cyan
-    for ($i = 0; $i -lt $bastions.Count; $i++) {
-        Write-Host "    [$($i + 1)] $($bastions[$i].Name) - $($bastions[$i].ResourceGroupName)" -ForegroundColor White
+#region Functions
+function Write-ColorOutput {
+    param([string]$Message, [string]$Type = "INFO")
+    $color = switch ($Type) {
+        "SUCCESS" { "Green" }
+        "ERROR" { "Red" }
+        "WARNING" { "Yellow" }
+        "INFO" { "Cyan" }
+        default { "White" }
     }
-    do {
-        $sel = Read-Host "  Select Bastion [1-$($bastions.Count)]"
-    } while ([int]$sel -lt 1 -or [int]$sel -gt $bastions.Count)
-    $bastion = $bastions[[int]$sel - 1]
+    $timestamp = Get-Date -Format "HH:mm:ss"
+    Write-Host "[$timestamp] $Message" -ForegroundColor $color
 }
 
-Write-Host "  Found: $($bastion.Name)" -ForegroundColor Green
-Write-Host "    Location: $($bastion.Location)" -ForegroundColor Gray
+function Get-RegionAbbreviation {
+    param([string]$Region)
+    $abbreviations = @{
+        "centralus" = "PHC"
+        "eastus" = "PHE"
+        "westus" = "PHW"
+        "eastus2" = "PHE2"
+        "westus2" = "PHW2"
+    }
+    return $abbreviations[$Region.ToLower()]
+}
 
-$bastionSubnetId = $bastion.IpConfigurations[0].Subnet.Id
-$bastionVNetName = ($bastionSubnetId -split '/')[8]
-$bastionVNetRG = ($bastionSubnetId -split '/')[4]
-$bastionVNet = Get-AzVirtualNetwork -Name $bastionVNetName -ResourceGroupName $bastionVNetRG
-Write-Host "    Hub VNet: $($bastionVNet.Name)" -ForegroundColor Gray
-Write-Host ""
-#endregion
-
-#region Storage Account Option
-Write-Host "[3/9] Storage Account for User Profiles (FSLogix)" -ForegroundColor Yellow
-Write-Host "  Do you need a storage account for user profiles?" -ForegroundColor Cyan
-Write-Host "    [Y] Yes - I need storage for FSLogix profiles" -ForegroundColor White
-Write-Host "    [N] No - Skip storage account (default)" -ForegroundColor Gray
-Write-Host ""
-$needStorage = Read-Host "  Need storage account? (Y/N)"
-
-$storageAccount = $null
-$storageAccountKey = $null
-$fileShareName = $null
-
-if ($needStorage -eq "Y" -or $needStorage -eq "y") {
-    Write-Host ""
-    Write-Host "  Storage Account Options:" -ForegroundColor Cyan
-    Write-Host "    [1] Use EXISTING storage account" -ForegroundColor White
-    Write-Host "    [2] Create NEW storage account" -ForegroundColor White
-    Write-Host ""
-    do {
-        $storageChoice = Read-Host "  Select option [1-2]"
-    } while ($storageChoice -notmatch '^[12]$')
+function Install-RequiredModules {
+    Write-ColorOutput "Checking Azure modules..." "INFO"
+    $modules = @("Az.Accounts", "Az.Resources", "Az.Compute", "Az.Network")
     
-    if ($storageChoice -eq "1") {
-        Write-Host ""
-        Write-Host "  Scanning for storage accounts..." -ForegroundColor Cyan
-        $storageAccounts = Get-AzStorageAccount | Where-Object { $_.Location -eq $bastion.Location }
+    foreach ($module in $modules) {
+        if (!(Get-Module -Name $module -ListAvailable)) {
+            Write-ColorOutput "Installing $module..." "WARNING"
+            Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser -Repository PSGallery
+        }
+        Import-Module $module -ErrorAction SilentlyContinue
+    }
+    Write-ColorOutput "All modules ready" "SUCCESS"
+}
+
+function Connect-AzureAccount {
+    Write-ColorOutput "Connecting to Azure..." "INFO"
+    try {
+        $context = Get-AzContext -ErrorAction SilentlyContinue
+        if (!$context) {
+            Connect-AzAccount -ErrorAction Stop | Out-Null
+            $context = Get-AzContext
+        }
+        Write-ColorOutput "Connected as: $($context.Account.Id)" "SUCCESS"
         
-        if ($storageAccounts.Count -eq 0) {
-            Write-Host "  No storage accounts found in $($bastion.Location)" -ForegroundColor Yellow
-            Write-Host "  Will create a new one instead..." -ForegroundColor Yellow
-            $storageChoice = "2"
-        } else {
-            Write-Host "  Available Storage Accounts:" -ForegroundColor Cyan
-            for ($i = 0; $i -lt $storageAccounts.Count; $i++) {
-                Write-Host "    [$($i + 1)] $($storageAccounts[$i].StorageAccountName) - $($storageAccounts[$i].ResourceGroupName)" -ForegroundColor White
+        $subs = Get-AzSubscription | Where-Object { $_.State -eq "Enabled" }
+        if ($subs.Count -gt 1) {
+            Write-Host "`nAvailable Subscriptions:" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $subs.Count; $i++) {
+                Write-Host "  [$($i+1)] $($subs[$i].Name)" -ForegroundColor White
             }
-            do {
-                $stSel = Read-Host "  Select storage account [1-$($storageAccounts.Count)]"
-            } while ([int]$stSel -lt 1 -or [int]$stSel -gt $storageAccounts.Count)
-            
-            $storageAccount = $storageAccounts[[int]$stSel - 1]
-            Write-Host "  Selected: $($storageAccount.StorageAccountName)" -ForegroundColor Green
-        }
-    }
-    
-    if ($storageChoice -eq "2") {
-        Write-Host ""
-        Write-Host "  Creating new storage account..." -ForegroundColor Cyan
-        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-        $storageAccountName = "stfslogix$($timestamp)".ToLower() -replace '[^a-z0-9]', ''
-        if ($storageAccountName.Length -gt 24) {
-            $storageAccountName = $storageAccountName.Substring(0, 24)
+            $selection = Read-Host "`nSelect subscription (1-$($subs.Count))"
+            $selectedSub = $subs[[int]$selection - 1]
+            Set-AzContext -SubscriptionId $selectedSub.Id | Out-Null
+            Write-ColorOutput "Using subscription: $($selectedSub.Name)" "SUCCESS"
         }
         
-        $storageRG = "RG-Storage-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-        New-AzResourceGroup -Name $storageRG -Location $bastion.Location -Force | Out-Null
-        
-        $storageAccount = New-AzStorageAccount -ResourceGroupName $storageRG -Name $storageAccountName -Location $bastion.Location -SkuName Standard_LRS -Kind StorageV2 -EnableLargeFileShare -ErrorAction Stop
-        
-        Write-Host "  Storage account created: $storageAccountName" -ForegroundColor Green
+        return $true
+    } catch {
+        Write-ColorOutput "Azure connection failed: $($_.Exception.Message)" "ERROR"
+        return $false
     }
-    
-    $storageAccountKey = (Get-AzStorageAccountKey -ResourceGroupName $storageAccount.ResourceGroupName -Name $storageAccount.StorageAccountName)[0].Value
-    
-    Write-Host "  Creating Azure File Share..." -ForegroundColor Cyan
-    $fileShareName = "profiles"
-    $storageContext = New-AzStorageContext -StorageAccountName $storageAccount.StorageAccountName -StorageAccountKey $storageAccountKey
-    
-    $existingShare = Get-AzStorageShare -Name $fileShareName -Context $storageContext -ErrorAction SilentlyContinue
-    if (!$existingShare) {
-        New-AzStorageShare -Name $fileShareName -Context $storageContext -QuotaGiB 100 | Out-Null
-        Write-Host "  File share created: $fileShareName (100GB)" -ForegroundColor Green
-    } else {
-        Write-Host "  File share exists: $fileShareName" -ForegroundColor Green
-    }
-    Write-Host ""
-} else {
-    Write-Host "  Skipping storage account" -ForegroundColor Yellow
-    Write-Host ""
 }
 #endregion
 
 #region Configuration
-Write-Host "[4/9] VM Configuration" -ForegroundColor Yellow
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$location = $bastion.Location
+$regionPrefix = Get-RegionAbbreviation -Region $Location
 
-Write-Host "  VM Configuration:" -ForegroundColor Cyan
-Write-Host "    Location: $location" -ForegroundColor White
-Write-Host "    OS: Windows Server 2022 Datacenter" -ForegroundColor White
-Write-Host "    Size: Standard_B2s (2 vCPU, 4GB RAM)" -ForegroundColor White
-if ($storageAccount) {
-    Write-Host "    Storage: $($storageAccount.StorageAccountName)" -ForegroundColor White
+$namingConfig = @{
+    ResourceGroup = "$regionPrefix-RG-Bastion"
+    VNet = "$regionPrefix-VNET-Hub"
+    VMSubnet = "$regionPrefix-SNET-VMs"
+    NSG = "$regionPrefix-NSG-VMs"
+}
+#endregion
+
+#region Display Configuration
+Write-Host ""
+Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║      PyxHealth Windows VMs for Bastion Deployment           ║" -ForegroundColor Cyan
+Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "DEPLOYMENT CONFIGURATION:" -ForegroundColor Yellow
+Write-Host "  Region: $Location" -ForegroundColor White
+Write-Host "  Naming Prefix: $regionPrefix" -ForegroundColor White
+Write-Host "  VM Size: $VMSize" -ForegroundColor White
+Write-Host "  VM Count: $VMCount" -ForegroundColor White
+Write-Host ""
+Write-Host "RESOURCE NAMES (PyxHealth Convention):" -ForegroundColor Yellow
+Write-Host "  Resource Group: $($namingConfig.ResourceGroup)" -ForegroundColor White
+Write-Host "  VNet: $($namingConfig.VNet)" -ForegroundColor White
+Write-Host "  Subnet: $($namingConfig.VMSubnet)" -ForegroundColor White
+Write-Host "  NSG: $($namingConfig.NSG)" -ForegroundColor White
+for ($i = 1; $i -le $VMCount; $i++) {
+    Write-Host "  VM $i: $regionPrefix-VM-Win$($i.ToString('00'))" -ForegroundColor White
 }
 Write-Host ""
 
-$adminUsername = Read-Host "    VM Admin Username"
-$adminPassword = Read-Host "    VM Admin Password" -AsSecureString
-$cred = New-Object System.Management.Automation.PSCredential ($adminUsername, $adminPassword)
-Write-Host "  Credentials set" -ForegroundColor Green
-Write-Host ""
+if (!$Force) {
+    $confirm = Read-Host "Proceed with deployment? (Y/N)"
+    if ($confirm -notmatch '^[Yy]$') {
+        Write-ColorOutput "Deployment cancelled" "WARNING"
+        exit 0
+    }
+}
 #endregion
 
-#region Create Resources
-Write-Host "[5/9] Creating Resource Group & VNet" -ForegroundColor Yellow
-$rgName = "RG-BastionTest-VMs-$timestamp"
-$vnetName = "VNet-Test-VMs"
-$subnetName = "Subnet-VMs"
-
-Write-Host "  Creating Resource Group..." -ForegroundColor Cyan
-$rg = New-AzResourceGroup -Name $rgName -Location $location -Force
-Write-Host "  Resource Group created: $rgName" -ForegroundColor Green
-
-Write-Host "  Creating Virtual Network..." -ForegroundColor Cyan
-$subnetConfig = New-AzVirtualNetworkSubnetConfig -Name $subnetName -AddressPrefix "10.1.0.0/24"
-$vnet = New-AzVirtualNetwork -Name $vnetName -ResourceGroupName $rgName -Location $location -AddressPrefix "10.1.0.0/16" -Subnet $subnetConfig
-Write-Host "  VNet created: $vnetName" -ForegroundColor Green
-Write-Host ""
-#endregion
-
-#region VNet Peering
-Write-Host "[6/9] Configuring VNet Peering to Bastion" -ForegroundColor Yellow
+#region Main Deployment
 try {
-    $peeringName1 = "TestVMs-to-Bastion"
-    Add-AzVirtualNetworkPeering -Name $peeringName1 -VirtualNetwork $vnet -RemoteVirtualNetworkId $bastionVNet.Id -AllowForwardedTraffic -ErrorAction Stop | Out-Null
-    Write-Host "  Peering created: $peeringName1" -ForegroundColor Green
+    Install-RequiredModules
     
-    $peeringName2 = "Bastion-to-TestVMs-$timestamp"
-    Add-AzVirtualNetworkPeering -Name $peeringName2 -VirtualNetwork $bastionVNet -RemoteVirtualNetworkId $vnet.Id -AllowForwardedTraffic -AllowGatewayTransit -ErrorAction Stop | Out-Null
-    Write-Host "  Peering created: $peeringName2" -ForegroundColor Green
-} catch {
-    Write-Host "  Warning: $($_.Exception.Message)" -ForegroundColor Yellow
-}
-Write-Host ""
-#endregion
-
-#region Create NSG
-Write-Host "[7/9] Creating Network Security Group" -ForegroundColor Yellow
-$nsgName = "NSG-TestVMs"
-$rdpRule = New-AzNetworkSecurityRuleConfig -Name "Allow-RDP-Bastion" -Access Allow -Protocol Tcp -Direction Inbound -Priority 100 -SourceAddressPrefix "VirtualNetwork" -SourcePortRange * -DestinationAddressPrefix * -DestinationPortRange 3389
-$nsg = New-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $rgName -Location $location -SecurityRules $rdpRule
-Write-Host "  NSG created" -ForegroundColor Green
-Write-Host ""
-#endregion
-
-#region Deploy VMs
-Write-Host "[8/9] Deploying 2 Windows VMs (10-15 minutes)" -ForegroundColor Yellow
-
-$vm1Name = "TestVM-01"
-$nic1Name = "$vm1Name-NIC"
-Write-Host "  Creating $vm1Name..." -ForegroundColor Cyan
-$nic1 = New-AzNetworkInterface -Name $nic1Name -ResourceGroupName $rgName -Location $location -SubnetId $vnet.Subnets[0].Id -NetworkSecurityGroupId $nsg.Id
-$vm1 = New-AzVMConfig -VMName $vm1Name -VMSize "Standard_B2s"
-$vm1 = Set-AzVMOperatingSystem -VM $vm1 -Windows -ComputerName $vm1Name -Credential $cred -ProvisionVMAgent -EnableAutoUpdate
-$vm1 = Set-AzVMSourceImage -VM $vm1 -PublisherName "MicrosoftWindowsServer" -Offer "WindowsServer" -Skus "2022-datacenter-azure-edition" -Version "latest"
-$vm1 = Add-AzVMNetworkInterface -VM $vm1 -Id $nic1.Id
-$vm1 = Set-AzVMBootDiagnostic -VM $vm1 -Disable
-New-AzVM -ResourceGroupName $rgName -Location $location -VM $vm1 | Out-Null
-Write-Host "  $vm1Name deployed" -ForegroundColor Green
-
-$vm2Name = "TestVM-02"
-$nic2Name = "$vm2Name-NIC"
-Write-Host "  Creating $vm2Name..." -ForegroundColor Cyan
-$nic2 = New-AzNetworkInterface -Name $nic2Name -ResourceGroupName $rgName -Location $location -SubnetId $vnet.Subnets[0].Id -NetworkSecurityGroupId $nsg.Id
-$vm2 = New-AzVMConfig -VMName $vm2Name -VMSize "Standard_B2s"
-$vm2 = Set-AzVMOperatingSystem -VM $vm2 -Windows -ComputerName $vm2Name -Credential $cred -ProvisionVMAgent -EnableAutoUpdate
-$vm2 = Set-AzVMSourceImage -VM $vm2 -PublisherName "MicrosoftWindowsServer" -Offer "WindowsServer" -Skus "2022-datacenter-azure-edition" -Version "latest"
-$vm2 = Add-AzVMNetworkInterface -VM $vm2 -Id $nic2.Id
-$vm2 = Set-AzVMBootDiagnostic -VM $vm2 -Disable
-New-AzVM -ResourceGroupName $rgName -Location $location -VM $vm2 | Out-Null
-Write-Host "  $vm2Name deployed" -ForegroundColor Green
-Write-Host ""
-#endregion
-
-#region Success
-$vm1Obj = Get-AzVM -ResourceGroupName $rgName -Name $vm1Name
-$vm2Obj = Get-AzVM -ResourceGroupName $rgName -Name $vm2Name
-$nic1Details = Get-AzNetworkInterface -ResourceId $vm1Obj.NetworkProfile.NetworkInterfaces[0].Id
-$nic2Details = Get-AzNetworkInterface -ResourceId $vm2Obj.NetworkProfile.NetworkInterfaces[0].Id
-
-Write-Host "============================================================" -ForegroundColor Green
-Write-Host "  SUCCESS! 2 VMs DEPLOYED AND READY" -ForegroundColor Green
-Write-Host "============================================================" -ForegroundColor Green
-Write-Host ""
-Write-Host "VMs DEPLOYED:" -ForegroundColor Cyan
-Write-Host "  1. $vm1Name - $($nic1Details.IpConfigurations[0].PrivateIpAddress)" -ForegroundColor White
-Write-Host "  2. $vm2Name - $($nic2Details.IpConfigurations[0].PrivateIpAddress)" -ForegroundColor White
-Write-Host ""
-Write-Host "CREDENTIALS:" -ForegroundColor Cyan
-Write-Host "  Username: $adminUsername" -ForegroundColor White
-Write-Host ""
-
-if ($storageAccount) {
-    Write-Host "STORAGE CONFIGURATION:" -ForegroundColor Cyan
-    Write-Host "  Storage Account: $($storageAccount.StorageAccountName)" -ForegroundColor White
-    Write-Host "  File Share: $fileShareName" -ForegroundColor White
-    Write-Host "  UNC Path: \\$($storageAccount.StorageAccountName).file.core.windows.net\$fileShareName" -ForegroundColor Gray
+    if (!(Connect-AzureAccount)) {
+        throw "Azure connection failed"
+    }
+    
     Write-Host ""
+    Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "  STARTING DEPLOYMENT" -ForegroundColor Cyan
+    Write-Host "═══════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Get existing resources
+    Write-ColorOutput "Checking existing resources..." "INFO"
+    $rg = Get-AzResourceGroup -Name $namingConfig.ResourceGroup -ErrorAction SilentlyContinue
+    if (!$rg) {
+        throw "Resource Group $($namingConfig.ResourceGroup) not found. Deploy Bastion first!"
+    }
+    
+    $vnet = Get-AzVirtualNetwork -Name $namingConfig.VNet -ResourceGroupName $namingConfig.ResourceGroup -ErrorAction SilentlyContinue
+    if (!$vnet) {
+        throw "VNet $($namingConfig.VNet) not found. Deploy Bastion first!"
+    }
+    Write-ColorOutput "Existing resources found" "SUCCESS"
+    
+    # Create VM Subnet
+    Write-ColorOutput "Creating VM Subnet: $($namingConfig.VMSubnet)" "INFO"
+    $vmSubnet = $vnet.Subnets | Where-Object { $_.Name -eq $namingConfig.VMSubnet }
+    if (!$vmSubnet) {
+        $vnet | Add-AzVirtualNetworkSubnetConfig -Name $namingConfig.VMSubnet -AddressPrefix "10.0.2.0/24" | Set-AzVirtualNetwork | Out-Null
+        $vnet = Get-AzVirtualNetwork -Name $namingConfig.VNet -ResourceGroupName $namingConfig.ResourceGroup
+        $vmSubnet = $vnet.Subnets | Where-Object { $_.Name -eq $namingConfig.VMSubnet }
+    }
+    Write-ColorOutput "VM Subnet ready" "SUCCESS"
+    
+    # Create NSG
+    Write-ColorOutput "Creating NSG: $($namingConfig.NSG)" "INFO"
+    $nsgRules = @(
+        New-AzNetworkSecurityRuleConfig -Name "Allow-RDP-From-Bastion" `
+            -Protocol Tcp -Direction Inbound -Priority 100 `
+            -SourceAddressPrefix "10.0.1.0/26" -SourcePortRange * `
+            -DestinationAddressPrefix * -DestinationPortRange 3389 -Access Allow
+    )
+    
+    $nsg = Get-AzNetworkSecurityGroup -Name $namingConfig.NSG -ResourceGroupName $namingConfig.ResourceGroup -ErrorAction SilentlyContinue
+    if (!$nsg) {
+        $nsg = New-AzNetworkSecurityGroup `
+            -Name $namingConfig.NSG `
+            -ResourceGroupName $namingConfig.ResourceGroup `
+            -Location $Location `
+            -SecurityRules $nsgRules `
+            -Tag @{ Purpose = "VM-Protection"; Company = "PyxHealth" }
+    }
+    Write-ColorOutput "NSG configured" "SUCCESS"
+    
+    # Get admin credentials
+    Write-Host ""
+    Write-Host "Enter VM Administrator Credentials:" -ForegroundColor Yellow
+    $adminUsername = Read-Host "Username (default: pyxadmin)"
+    if ([string]::IsNullOrWhiteSpace($adminUsername)) { $adminUsername = "pyxadmin" }
+    $adminPassword = Read-Host "Password" -AsSecureString
+    $cred = New-Object System.Management.Automation.PSCredential ($adminUsername, $adminPassword)
+    
+    # Deploy VMs
+    for ($i = 1; $i -le $VMCount; $i++) {
+        $vmNumber = $i.ToString('00')
+        $vmName = "$regionPrefix-VM-Win$vmNumber"
+        $nicName = "$regionPrefix-NIC-Win$vmNumber"
+        $osDiskName = "$regionPrefix-DISK-Win$vmNumber-OS"
+        
+        Write-ColorOutput "Deploying VM $i of $VMCount : $vmName" "INFO"
+        
+        # Create NIC
+        $nic = Get-AzNetworkInterface -Name $nicName -ResourceGroupName $namingConfig.ResourceGroup -ErrorAction SilentlyContinue
+        if (!$nic) {
+            $nic = New-AzNetworkInterface `
+                -Name $nicName `
+                -ResourceGroupName $namingConfig.ResourceGroup `
+                -Location $Location `
+                -SubnetId $vmSubnet.Id `
+                -NetworkSecurityGroupId $nsg.Id `
+                -Tag @{ Purpose = "VM-Network"; Company = "PyxHealth" }
+        }
+        
+        # Create VM
+        $vm = Get-AzVM -Name $vmName -ResourceGroupName $namingConfig.ResourceGroup -ErrorAction SilentlyContinue
+        if (!$vm) {
+            $vmConfig = New-AzVMConfig -VMName $vmName -VMSize $VMSize
+            $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName $vmName `
+                -Credential $cred -ProvisionVMAgent -EnableAutoUpdate
+            $vmConfig = Set-AzVMSourceImage -VM $vmConfig `
+                -PublisherName "MicrosoftWindowsServer" `
+                -Offer "WindowsServer" `
+                -Skus "2022-datacenter-azure-edition" `
+                -Version "latest"
+            $vmConfig = Set-AzVMOSDisk -VM $vmConfig -Name $osDiskName `
+                -CreateOption FromImage -StorageAccountType Premium_LRS
+            $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $nic.Id
+            $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Disable
+            
+            $vm = New-AzVM -ResourceGroupName $namingConfig.ResourceGroup -Location $Location -VM $vmConfig `
+                -Tag @{
+                    Environment = "Production"
+                    Purpose = "Windows-Server"
+                    Company = "PyxHealth"
+                    OS = "Windows-Server-2022"
+                }
+        }
+        Write-ColorOutput "VM $vmName deployed successfully" "SUCCESS"
+    }
+    
+    # Deployment Summary
+    Write-Host ""
+    Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+    Write-Host "║              DEPLOYMENT COMPLETED SUCCESSFULLY               ║" -ForegroundColor Green
+    Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "DEPLOYMENT SUMMARY:" -ForegroundColor Yellow
+    Write-Host "  Resource Group: $($namingConfig.ResourceGroup)" -ForegroundColor White
+    Write-Host "  Region: $Location" -ForegroundColor White
+    Write-Host "  VMs Deployed: $VMCount" -ForegroundColor White
+    Write-Host "  VM Size: $VMSize" -ForegroundColor White
+    Write-Host ""
+    Write-Host "VMs DEPLOYED:" -ForegroundColor Yellow
+    for ($i = 1; $i -le $VMCount; $i++) {
+        Write-Host "  $regionPrefix-VM-Win$($i.ToString('00'))" -ForegroundColor White
+    }
+    Write-Host ""
+    Write-Host "CONNECTION INFO:" -ForegroundColor Yellow
+    Write-Host "  Username: $adminUsername" -ForegroundColor White
+    Write-Host "  Connect: Azure Portal > Bastion" -ForegroundColor White
+    Write-Host ""
+    
+    Write-ColorOutput "Deployment completed successfully!" "SUCCESS"
+    
+} catch {
+    Write-ColorOutput "DEPLOYMENT FAILED: $($_.Exception.Message)" "ERROR"
+    exit 1
 }
-
-Write-Host "CONNECTION LINKS:" -ForegroundColor Cyan
-Write-Host "  Portal -> Virtual Machines -> Click VM -> Connect -> Bastion" -ForegroundColor White
-Write-Host ""
-Write-Host "  Direct Links:" -ForegroundColor Yellow
-Write-Host "  https://portal.azure.com/#@/resource$($vm1Obj.Id)/connectBastion" -ForegroundColor Gray
-Write-Host "  https://portal.azure.com/#@/resource$($vm2Obj.Id)/connectBastion" -ForegroundColor Gray
-Write-Host ""
-Write-Host "CLEANUP (when done):" -ForegroundColor Cyan
-Write-Host "  Remove-AzResourceGroup -Name $rgName -Force" -ForegroundColor Gray
-Write-Host ""
 #endregion
-
-
