@@ -1,0 +1,31 @@
+================================================================
+AZURE BASTION ENTERPRISE DEPLOYMENT REPORT
+================================================================
+Deployment Date: 2025-11-02 09:55:58
+Subscription: Pay-As-You-Go
+
+BASTION CONFIGURATION:
+  Name: BastionHost-Hub
+  Public IP: 20.185.26.66
+  SKU: Standard
+  Resource Group: RG-Bastion-Hub-20251102-094558
+  Location: eastus
+
+NETWORK ARCHITECTURE:
+  Hub VNet: Hub-VNet (10.0.0.0/16)
+  Peered VNets: 0
+
+
+CONNECTED VMS: 0
+
+
+FEATURES:
+  - Entra ID Authentication (SSO + MFA)
+  - Native Client Tunneling (SSH/RDP)
+  - SCP File Transfer
+  - Multi-VNet Connectivity
+
+COST:
+  Monthly: ~$140 (Bastion only, peering included)
+
+================================================================
