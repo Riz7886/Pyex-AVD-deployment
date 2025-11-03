@@ -1,0 +1,4 @@
+# DataDog Configuration
+# Replace the values below with your actual keys
+DD_API_KEY=your-api-key-here
+DD_APP_KEY=your-app-key-here
