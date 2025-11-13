@@ -1,0 +1,305 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║         DRIVERS HEALTH - NEW FRONT DOOR DEPLOYMENT                   ║
+║         Pyx Health - Drivers Health Service                          ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+
+✅ CONFIRMED: THIS IS A NEW FRONT DOOR FOR DRIVERS HEALTH!
+═══════════════════════════════════════════════════════════════════════
+
+NOT the existing fdp-prod Front Door!
+
+This creates a SEPARATE Front Door specifically for Drivers Health with:
+- DH (Drivers Health) naming convention
+- Separate subscription: "Drivers Health"
+- Separate resource group: "rg-drivershealth-prod"
+- New Front Door name: "fdh-prod" (Front Door Health)
+
+
+🎯 DRIVERS HEALTH NAMING CONVENTION
+═══════════════════════════════════════════════════════════════════════
+
+ALL resources use "DH" or "DriversHealth" prefix:
+
+✅ Front Door: fdh-prod (NOT fdp-prod)
+✅ Endpoint: afd-drivershealth-prod (NOT afd-identity-prod)
+✅ Origin Group: dh-origin-group (NOT prod-origin-group)
+✅ WAF Policy: drivershealthprodwafpolicy (NOT identityprodfwafpolicy)
+✅ Log Workspace: law-fdh-prod (NOT law-fdp-prod)
+✅ Alerts: DH-High-Latency-Alert (NOT High-Latency-Alert)
+✅ Resource Group: rg-drivershealth-prod (NOT Production)
+
+THIS IS COMPLETELY SEPARATE FROM EXISTING FRONT DOORS!
+
+
+🚀 QUICK START
+═══════════════════════════════════════════════════════════════════════
+
+STEP 1: Prerequisites
+────────────────────────────────────────────────────────────────────
+
+PowerShell as Administrator:
+
+    Install-Module -Name Az.Accounts, Az.FrontDoor, Az.Resources -Force
+
+Azure CLI:
+    Download: https://aka.ms/installazurecliwindows
+
+
+STEP 2: Run Deployment
+────────────────────────────────────────────────────────────────────
+
+    .\Deploy-DriversHealth-FrontDoor.ps1
+
+The script will:
+✅ Find "Drivers Health" subscription automatically
+✅ Create NEW resource group "rg-drivershealth-prod"
+✅ Search for Drivers Health backend services
+✅ Create NEW Front Door "fdh-prod"
+✅ Configure with DH naming convention
+✅ Deploy everything (10-15 minutes)
+
+
+STEP 3: Verify
+────────────────────────────────────────────────────────────────────
+
+Azure Portal:
+    Search for "fdh-prod"
+
+PowerShell:
+    Get-AzFrontDoor -ResourceGroupName "rg-drivershealth-prod" -Name "fdh-prod"
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+📦 WHAT GETS CREATED (ALL NEW!)
+═══════════════════════════════════════════════════════════════════════
+
+Resource Group:
+  └─ rg-drivershealth-prod (NEW!)
+
+Front Door Premium:
+  └─ fdh-prod (NEW!)
+       ├─ Endpoint: afd-drivershealth-prod
+       ├─ Origin Group: dh-origin-group
+       ├─ Origins: Auto-detected Drivers Health backends
+       └─ Routes: route-drivershealth-prod
+
+Security:
+  ├─ WAF Policy: drivershealthprodwafpolicy (NEW!)
+  │    ├─ Microsoft Default RS 2.1
+  │    └─ Bot Protection 1.0
+  └─ Managed Identity: System-assigned
+
+Monitoring:
+  ├─ Log Analytics: law-fdh-prod (NEW!)
+  ├─ Diagnostic Settings: 90 days retention
+  └─ Alerts:
+       ├─ DH-High-Latency-Alert
+       ├─ DH-High-Error-Rate-Alert
+       └─ DH-Origin-Health-Alert
+
+Tags:
+  ├─ Service: Drivers Health
+  ├─ Company: Pyx Health
+  ├─ Environment: prod
+  ├─ CostCenter: Drivers-Health
+  └─ Purpose: Drivers Health Platform
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+🔍 AUTO-DETECTION FEATURES
+═══════════════════════════════════════════════════════════════════════
+
+The script AUTOMATICALLY finds:
+
+✅ Drivers Health subscription
+   → Searches for "Drivers Health", "DriversHealth", "DH"
+   → Shows all subscriptions if not found
+   → Lets you choose manually
+
+✅ Drivers Health backend services
+   → Searches for App Services with "drivershealth", "drivers-health"
+   → Auto-configures origins
+   → Lets you specify manually if not found
+
+✅ Correct resource group
+   → Creates "rg-drivershealth-prod" if not exists
+   → Updates tags if exists
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+⚙️ CUSTOMIZATION
+═══════════════════════════════════════════════════════════════════════
+
+Default values (all using DH convention):
+
+    Front Door Name: fdh-prod
+    Resource Group: rg-drivershealth-prod
+    Subscription: Auto-detected "Drivers Health"
+    Endpoint: afd-drivershealth-prod
+    Origin Group: dh-origin-group
+    WAF Policy: drivershealthprodwafpolicy
+
+To override:
+
+    .\Deploy-DriversHealth-FrontDoor.ps1 `
+        -SubscriptionName "YourDriversHealthSub" `
+        -ResourceGroupName "rg-dh-custom" `
+        -FrontDoorName "fdh-custom" `
+        -Environment "prod"
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+🔒 SECURITY CONFIGURATION
+═══════════════════════════════════════════════════════════════════════
+
+WAF Policy: drivershealthprodwafpolicy
+  ├─ Mode: Prevention (blocks threats)
+  ├─ Default Rule Set 2.1 (OWASP top 10)
+  └─ Bot Manager 1.0 (bot protection)
+
+Managed Identity:
+  └─ System-assigned (no credentials needed)
+
+HTTPS:
+  ├─ Automatic redirect (HTTP → HTTPS)
+  ├─ TLS 1.2 minimum
+  └─ Strong cipher suites
+
+Health Probes:
+  ├─ Path: /health
+  ├─ Interval: Every 30 seconds
+  ├─ Protocol: HTTPS only
+  └─ Method: GET
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+📊 MONITORING & ALERTS
+═══════════════════════════════════════════════════════════════════════
+
+Log Analytics Workspace:
+  └─ law-fdh-prod (NEW workspace for Drivers Health)
+
+Diagnostic Logs (90 days):
+  ├─ Access logs
+  ├─ Health probe logs
+  └─ WAF logs
+
+Metric Alerts:
+  ├─ DH-High-Latency-Alert (>1000ms)
+  ├─ DH-High-Error-Rate-Alert (>100 errors/5min)
+  └─ DH-Origin-Health-Alert (<50% healthy)
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+✅ VERIFICATION STEPS
+═══════════════════════════════════════════════════════════════════════
+
+After deployment:
+
+1. Check Front Door exists:
+   Get-AzFrontDoor -ResourceGroupName "rg-drivershealth-prod" -Name "fdh-prod"
+
+2. Check WAF Policy:
+   Get-AzFrontDoorWafPolicy -ResourceGroupName "rg-drivershealth-prod" -Name "drivershealthprodwafpolicy"
+
+3. Test endpoint:
+   curl -I https://afd-drivershealth-prod-XXXXXXXXXX.azurefd.net
+
+4. View in Azure Portal:
+   https://portal.azure.com → Search "fdh-prod"
+
+5. Check logs:
+   Azure Monitor → Log Analytics → law-fdh-prod
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+❌ TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════
+
+Issue: "Drivers Health subscription not found"
+Fix: Script will show all subscriptions, choose the correct one
+
+Issue: "No backend services found"
+Fix: Script will ask for manual hostname, enter Drivers Health backend
+
+Issue: "Resource group already exists"
+Fix: Script will use existing and update tags (safe)
+
+Issue: "Front Door name already in use"
+Fix: Choose different name with -FrontDoorName parameter
+
+Issue: "Azure CLI not installed"
+Fix: Install from https://aka.ms/installazurecliwindows
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+📝 IMPORTANT NOTES
+═══════════════════════════════════════════════════════════════════════
+
+✅ This creates a BRAND NEW Front Door
+✅ Uses SEPARATE subscription (Drivers Health)
+✅ Uses SEPARATE resource group
+✅ Uses DH naming convention throughout
+✅ Does NOT affect existing fdp-prod Front Door
+✅ Completely independent deployment
+✅ All resources tagged with "Service: Drivers Health"
+
+THIS IS NOT THE SAME AS fdp-prod!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+🎉 AFTER DEPLOYMENT
+═══════════════════════════════════════════════════════════════════════
+
+You'll have:
+
+✅ New Front Door: fdh-prod
+✅ New Endpoint for Drivers Health
+✅ New WAF Policy with security rules
+✅ New Origins pointing to Drivers Health backends
+✅ New Monitoring with Log Analytics
+✅ New Alerts for Drivers Health
+✅ Complete deployment report
+
+All separate from existing Front Doors!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+📄 FILES INCLUDED
+═══════════════════════════════════════════════════════════════════════
+
+Deploy-DriversHealth-FrontDoor.ps1
+  → Main deployment script (RUN THIS!)
+
+DRIVERS-HEALTH-START-HERE.txt
+  → This file (quick reference)
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+© 2025 Pyx Health - Drivers Health Service
+Infrastructure Automation by Syed Rizvi

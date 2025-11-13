@@ -1,0 +1,241 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║              COMPARISON: EXISTING vs NEW FRONT DOOR                   ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+
+🔴 EXISTING FRONT DOOR (Identity Service)
+vs
+🟢 NEW FRONT DOOR (Drivers Health)
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ RESOURCE COMPARISON                                                 │
+└─────────────────────────────────────────────────────────────────────┘
+
+                  EXISTING (Identity)  │  NEW (Drivers Health)
+─────────────────────────────────────────────────────────────────────
+Service:          Identity Service     │  Drivers Health
+Subscription:     sub-corp-prod-001    │  Drivers Health
+Resource Group:   Production           │  rg-drivershealth-prod
+Front Door:       fdp-prod             │  fdh-prod
+Naming Prefix:    (none)               │  DH
+Purpose:          Identity Platform    │  Drivers Health Platform
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ NAMING COMPARISON                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+
+Component         EXISTING               │  NEW (Drivers Health)
+─────────────────────────────────────────────────────────────────────
+Front Door:       fdp-prod               │  fdh-prod
+Endpoint:         afd-identity-prod      │  afd-drivershealth-prod
+Origin Group:     prod-origin-group      │  dh-origin-group
+WAF Policy:       identityprodfwafpolicy │  drivershealthprodwafpolicy
+Origins:          identity services      │  drivers health backends
+Routes:           route-identity-prod    │  route-drivershealth-prod
+Log Workspace:    law-fdp-prod           │  law-fdh-prod
+Alerts:           High-Latency-Alert     │  DH-High-Latency-Alert
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ KEY DIFFERENCES                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+EXISTING (Identity):
+  ✓ Already deployed and running
+  ✓ Serves identity service
+  ✓ Uses fdp-prod name
+  ✓ In Production resource group
+  ✓ Connected to identity backends
+
+NEW (Drivers Health):
+  ⭐ BRAND NEW deployment
+  ⭐ Serves Drivers Health service
+  ⭐ Uses fdh-prod name
+  ⭐ In rg-drivershealth-prod resource group
+  ⭐ Connected to Drivers Health backends
+  ⭐ Uses DH naming convention throughout
+  ⭐ Completely independent
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ WHAT THE SCRIPT CREATES (ALL NEW!)                                 │
+└─────────────────────────────────────────────────────────────────────┘
+
+❌ Does NOT touch existing fdp-prod
+❌ Does NOT modify Production resource group
+❌ Does NOT affect identity service
+
+✅ Creates NEW subscription: Drivers Health
+✅ Creates NEW resource group: rg-drivershealth-prod
+✅ Creates NEW Front Door: fdh-prod
+✅ Creates NEW endpoint: afd-drivershealth-prod
+✅ Creates NEW origin group: dh-origin-group
+✅ Creates NEW WAF policy: drivershealthprodwafpolicy
+✅ Creates NEW Log Analytics: law-fdh-prod
+✅ Creates NEW alerts: DH-*
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ VISUAL COMPARISON                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+
+EXISTING INFRASTRUCTURE:
+────────────────────────
+
+Subscription: sub-corp-prod-001
+  └─ Resource Group: Production
+       └─ Front Door: fdp-prod
+            ├─ Endpoint: afd-identity-prod
+            ├─ Origin Group: prod-origin-group
+            │    └─ Origins: identity backends
+            ├─ WAF: identityprodfwafpolicy
+            └─ Logs: law-fdp-prod
+
+      ⬆️ EXISTING - UNTOUCHED ⬆️
+
+
+NEW INFRASTRUCTURE (DRIVERS HEALTH):
+────────────────────────────────────
+
+Subscription: Drivers Health
+  └─ Resource Group: rg-drivershealth-prod
+       └─ Front Door: fdh-prod  ⭐ NEW!
+            ├─ Endpoint: afd-drivershealth-prod  ⭐ NEW!
+            ├─ Origin Group: dh-origin-group  ⭐ NEW!
+            │    └─ Origins: drivers health backends  ⭐ NEW!
+            ├─ WAF: drivershealthprodwafpolicy  ⭐ NEW!
+            └─ Logs: law-fdh-prod  ⭐ NEW!
+
+      ⬆️ NEW - CREATED BY SCRIPT ⬆️
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ TAGS COMPARISON                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+EXISTING (Identity):
+  Company: Pyx Health
+  Environment: prod
+  Service: Identity
+  Purpose: Identity Platform
+  CostCenter: IT-Infrastructure
+
+NEW (Drivers Health):
+  Company: Pyx Health
+  Environment: prod
+  Service: Drivers Health  ⭐ DIFFERENT!
+  Purpose: Drivers Health Platform  ⭐ DIFFERENT!
+  CostCenter: Drivers-Health  ⭐ DIFFERENT!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ BACKEND SERVICES                                                    │
+└─────────────────────────────────────────────────────────────────────┘
+
+EXISTING (Identity):
+  → appcsvc-pyx-identity-prod.azurewebsites.net
+  → (Identity service backend)
+
+NEW (Drivers Health):
+  → appcsvc-drivershealth-prod.azurewebsites.net
+  → (Drivers Health backend - auto-detected)
+  → Or manually specified during deployment
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ DEPLOYMENT CONFIRMATION                                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+Before deployment, the script will show:
+
+  Service: Drivers Health  ✅
+  Subscription: Drivers Health  ✅
+  Resource Group: rg-drivershealth-prod  ✅
+  Front Door Name: fdh-prod  ✅
+  Naming Prefix: DH (Drivers Health)  ✅
+
+Then ask: "Create NEW Drivers Health Front Door? (yes/no)"
+
+This confirms you're creating a NEW Front Door!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ FINAL RESULT                                                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+After deployment, you'll have:
+
+TWO SEPARATE FRONT DOORS:
+
+1. fdp-prod (Existing - Identity Service)
+   └─ In Production resource group
+   └─ For identity platform
+   └─ UNCHANGED
+
+2. fdh-prod (New - Drivers Health)
+   └─ In rg-drivershealth-prod resource group
+   └─ For Drivers Health platform
+   └─ NEWLY CREATED
+
+Both running independently!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+✅ CONFIRMED: THIS CREATES A NEW FRONT DOOR!
+
+- Different subscription
+- Different resource group
+- Different name (fdh-prod not fdp-prod)
+- Different naming convention (DH)
+- Different backends (Drivers Health)
+- Different purpose (Drivers Health service)
+- Completely independent infrastructure
+
+NO CONFLICT WITH EXISTING FRONT DOOR!
+
+
+═══════════════════════════════════════════════════════════════════════
+
+
+📝 QUICK REFERENCE
+
+OLD (don't touch): fdp-prod, Production, identity
+NEW (create this): fdh-prod, rg-drivershealth-prod, drivers health
+
+
+═══════════════════════════════════════════════════════════════════════
+
+© 2025 Pyx Health
