@@ -1,0 +1,32 @@
+Transfer server IP address: __________ (internal IP)
+- Transfer HTTPS port: __________ (default: 443)
+- Transfer SSH port: __________ (default: 22)
+- SSTP tunnel port on Transfer: __________ (default: 10443)
+- SSTP username on Transfer: __________
+- SSTP password on Transfer: __________
+
+2. Gateway Installer
+- MOVEit Gateway installer location:
+  Option A: URL (I'll download): __________
+  Option B: Azure Blob SAS URL: __________
+  Option C: Network path: __________
+- Gateway version: __________ (e.g., 2024.1)
+
+3. Gateway License
+- License key: __________
+- Or license file (.lic) location: __________
+
+4. SSL Certificates for Gateway
+- Gateway certificate (.pfx file):
+  - Location/URL: __________
+  - Password: __________
+- Certificate purpose: (Gateway admin interface on port 9443)
+
+5. Gateway Configuration
+- Gateway public hostname/FQDN: __________ (e.g., gateway.yourcompany.com)
+- Protocols to enable:
+  [ ] SFTP/SSH (port 22)
+  [ ] HTTPS (port 443)
+  [ ] FTP Explicit (port 21)
+  [ ] FTPS Implicit (port 990)
+  [ ] HTTP (port 80)
