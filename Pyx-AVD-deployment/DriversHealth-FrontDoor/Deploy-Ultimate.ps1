@@ -8,7 +8,7 @@ $subs = az account list | ConvertFrom-Json
 Write-Host "SUBSCRIPTIONS:"
 for ($i = 0; $i -lt $subs.Count; $i++) { Write-Host "$($i + 1). $($subs[$i].name) - ID: $($subs[$i].id) - Tenant: $($subs[$i].tenantId)" }
 $targetSub = $subs | Where-Object { $_.name -like "*$TargetSubscriptionName*" } | Select-Object -First 1
-if (-not $targetSub) { $choice = Read-Host "Enter subscription number"; $targetSub = $subs[[int]$choice - 1] }
+if ($targetSub) { Write-Host "Found: $($targetSub.name)" -ForegroundColor Green } else { Write-Host "DriversHealth not found" -ForegroundColor Yellow; Write-Host "Options: 1) Select existing subscription  2) Create new DriversHealth subscription"; $option = Read-Host "Choose option (1 or 2)"; if ($option -eq "2") { Write-Host "Creating DriversHealth subscription..." -ForegroundColor Yellow; Write-Host "Note: Subscription creation requires billing account access"; Write-Host "Use Azure Portal: https://portal.azure.com/#create/Microsoft.Subscription"; Write-Host "Or contact your Azure admin to create the subscription"; Write-Host "After creation, run this script again"; exit 0 } else { $choice = Read-Host "Enter subscription number (1-$($subs.Count))"; $targetSub = $subs[[int]$choice - 1] } }
 az account set --subscription $targetSub.id
 Write-Host "Using: $($targetSub.name)" -ForegroundColor Green
 @"
