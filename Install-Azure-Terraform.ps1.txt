@@ -1,0 +1,168 @@
+@'
+# ================================================================
+# COMPLETE AZURE + TERRAFORM SETUP
+# Installs everything needed to run Terraform deployments
+# Run as Administrator
+# ================================================================
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "AZURE + TERRAFORM - COMPLETE INSTALLATION" -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check if running as Administrator
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "ERROR: Please run as Administrator!" -ForegroundColor Red
+    Write-Host "Right-click PowerShell and select 'Run as Administrator'" -ForegroundColor Yellow
+    pause
+    exit 1
+}
+
+Write-Host "Running as Administrator: OK" -ForegroundColor Green
+Write-Host ""
+
+Write-Host "STEP 1: Installing Chocolatey..." -ForegroundColor Yellow
+if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+    Write-Host "  Installing Chocolatey..."
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    Write-Host "  Chocolatey installed!" -ForegroundColor Green
+} else {
+    Write-Host "  Chocolatey already installed" -ForegroundColor Green
+}
+Write-Host ""
+
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+Write-Host "STEP 2: Installing Azure CLI..." -ForegroundColor Yellow
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+    Write-Host "  Downloading Azure CLI..."
+    choco install azure-cli -y
+    Write-Host "  Azure CLI installed!" -ForegroundColor Green
+} else {
+    $azVersion = az version --query '\"azure-cli\"' -o tsv 2>$null
+    Write-Host "  Azure CLI already installed (version: $azVersion)" -ForegroundColor Green
+}
+Write-Host ""
+
+Write-Host "STEP 3: Installing Terraform..." -ForegroundColor Yellow
+if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) {
+    Write-Host "  Downloading Terraform..."
+    choco install terraform -y
+    Write-Host "  Terraform installed!" -ForegroundColor Green
+} else {
+    $tfVersion = terraform version -json 2>$null | ConvertFrom-Json | Select-Object -ExpandProperty terraform_version
+    Write-Host "  Terraform already installed (version: $tfVersion)" -ForegroundColor Green
+}
+Write-Host ""
+
+Write-Host "STEP 4: Installing PowerShell Azure Modules..." -ForegroundColor Yellow
+if (-not (Get-Module -ListAvailable -Name Az)) {
+    Write-Host "  Installing Az module..."
+    Install-Module -Name Az -Repository PSGallery -Force -AllowClobber -Scope CurrentUser
+    Write-Host "  Az module installed!" -ForegroundColor Green
+} else {
+    Write-Host "  Az module already installed" -ForegroundColor Green
+}
+
+if (-not (Get-Module -ListAvailable -Name AzureAD)) {
+    Write-Host "  Installing AzureAD module..."
+    Install-Module -Name AzureAD -Repository PSGallery -Force -AllowClobber -Scope CurrentUser
+    Write-Host "  AzureAD module installed!" -ForegroundColor Green
+} else {
+    Write-Host "  AzureAD module already installed" -ForegroundColor Green
+}
+Write-Host ""
+
+Write-Host "STEP 5: Installing Git..." -ForegroundColor Yellow
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "  Downloading Git..."
+    choco install git -y
+    Write-Host "  Git installed!" -ForegroundColor Green
+} else {
+    $gitVersion = git --version 2>$null
+    Write-Host "  Git already installed ($gitVersion)" -ForegroundColor Green
+}
+Write-Host ""
+
+Write-Host "STEP 6: Configuring System PATH..." -ForegroundColor Yellow
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$terraformPath = "C:\ProgramData\chocolatey\bin"
+if ($machinePath -notlike "*$terraformPath*") {
+    [Environment]::SetEnvironmentVariable("Path", "$machinePath;$terraformPath", "Machine")
+}
+$azureCLIPath = "C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin"
+if ($machinePath -notlike "*$azureCLIPath*") {
+    [Environment]::SetEnvironmentVariable("Path", "$machinePath;$azureCLIPath", "Machine")
+}
+$gitPath = "C:\Program Files\Git\cmd"
+if ($machinePath -notlike "*$gitPath*") {
+    [Environment]::SetEnvironmentVariable("Path", "$machinePath;$gitPath", "Machine")
+}
+Write-Host "  PATH configured!" -ForegroundColor Green
+Write-Host ""
+
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+Write-Host "STEP 7: Configuring Terraform..." -ForegroundColor Yellow
+$tfPluginDir = "$env:APPDATA\terraform.d\plugin-cache"
+if (-not (Test-Path $tfPluginDir)) {
+    New-Item -ItemType Directory -Path $tfPluginDir -Force | Out-Null
+}
+$terraformrcContent = @"
+plugin_cache_dir = "$($tfPluginDir -replace '\\', '/')"
+disable_checkpoint = true
+"@
+$terraformrcPath = "$env:APPDATA\terraform.rc"
+$terraformrcContent | Out-File -FilePath $terraformrcPath -Encoding UTF8 -Force
+Write-Host "  Terraform configured!" -ForegroundColor Green
+Write-Host ""
+
+Write-Host "STEP 8: Configuring PowerShell..." -ForegroundColor Yellow
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+Write-Host "  Execution policy set" -ForegroundColor Green
+Write-Host ""
+
+Write-Host "STEP 9: Verifying installations..." -ForegroundColor Yellow
+$allGood = $true
+if (Get-Command az -ErrorAction SilentlyContinue) {
+    Write-Host "  Azure CLI: INSTALLED" -ForegroundColor Green
+} else {
+    Write-Host "  Azure CLI: FAILED" -ForegroundColor Red
+    $allGood = $false
+}
+if (Get-Command terraform -ErrorAction SilentlyContinue) {
+    Write-Host "  Terraform: INSTALLED" -ForegroundColor Green
+} else {
+    Write-Host "  Terraform: FAILED" -ForegroundColor Red
+    $allGood = $false
+}
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    Write-Host "  Git: INSTALLED" -ForegroundColor Green
+} else {
+    Write-Host "  Git: FAILED" -ForegroundColor Red
+    $allGood = $false
+}
+Write-Host ""
+
+Write-Host "================================================================" -ForegroundColor Cyan
+if ($allGood) {
+    Write-Host "INSTALLATION COMPLETE - ALL TOOLS READY!" -ForegroundColor Green
+} else {
+    Write-Host "INSTALLATION COMPLETE - RESTART POWERSHELL" -ForegroundColor Yellow
+}
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "NEXT STEPS:" -ForegroundColor Cyan
+Write-Host "  1. CLOSE this PowerShell window" -ForegroundColor Yellow
+Write-Host "  2. OPEN NEW PowerShell as Administrator" -ForegroundColor Yellow
+Write-Host "  3. Run: cd C:\Projects" -ForegroundColor Yellow
+Write-Host "  4. Run: git clone https://github.com/Riz7886/Pyex-AVD-deployment.git" -ForegroundColor Yellow
+Write-Host "  5. Run: cd Pyex-AVD-deployment\Pyx-AVD-deployment\DriversHealth-FrontDoor" -ForegroundColor Yellow
+Write-Host "  6. Run: .\Deploy-Ultimate.ps1" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Press ENTER to exit..."
+Read-Host
+'@ | Out-File C:\Install-Azure-Terraform.ps1 -Encoding UTF8; Write-Host "SAVED! File created at C:\Install-Azure-Terraform.ps1" -ForegroundColor Green
