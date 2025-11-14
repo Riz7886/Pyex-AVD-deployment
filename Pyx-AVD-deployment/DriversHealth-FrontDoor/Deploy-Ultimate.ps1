@@ -2,13 +2,15 @@ param([string]$TargetSubscriptionName = "DriversHealth", [string]$BackendHostnam
 Write-Host "AZURE FRONT DOOR DEPLOYMENT" -ForegroundColor Green
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { Write-Host "ERROR: Azure CLI not installed"; exit 1 }
 if (-not (Get-Command terraform -ErrorAction SilentlyContinue)) { Write-Host "ERROR: Terraform not installed"; exit 1 }
+Write-Host "Checking Azure authentication..."
 $account = az account show 2>$null
-if (-not $account) { az login }
+if (-not $account) { Write-Host "Opening browser for login..." -ForegroundColor Yellow; az login --use-device-code }
+Write-Host "Authenticated!" -ForegroundColor Green
 $subs = az account list | ConvertFrom-Json
 Write-Host "SUBSCRIPTIONS:"
-for ($i = 0; $i -lt $subs.Count; $i++) { Write-Host "$($i + 1). $($subs[$i].name) - ID: $($subs[$i].id) - Tenant: $($subs[$i].tenantId)" }
+for ($i = 0; $i -lt $subs.Count; $i++) { Write-Host "$($i + 1). $($subs[$i].name) - ID: $($subs[$i].id)" }
 $targetSub = $subs | Where-Object { $_.name -like "*$TargetSubscriptionName*" } | Select-Object -First 1
-if ($targetSub) { Write-Host "Found: $($targetSub.name)" -ForegroundColor Green } else { Write-Host "DriversHealth not found" -ForegroundColor Yellow; Write-Host "Options: 1) Select existing subscription  2) Create new DriversHealth subscription"; $option = Read-Host "Choose option (1 or 2)"; if ($option -eq "2") { Write-Host "Creating DriversHealth subscription..." -ForegroundColor Yellow; Write-Host "Note: Subscription creation requires billing account access"; Write-Host "Use Azure Portal: https://portal.azure.com/#create/Microsoft.Subscription"; Write-Host "Or contact your Azure admin to create the subscription"; Write-Host "After creation, run this script again"; exit 0 } else { $choice = Read-Host "Enter subscription number (1-$($subs.Count))"; $targetSub = $subs[[int]$choice - 1] } }
+if ($targetSub) { Write-Host "Found: $($targetSub.name)" -ForegroundColor Green } else { Write-Host "DriversHealth not found" -ForegroundColor Yellow; Write-Host "Options: 1) Select existing  2) Create new"; $option = Read-Host "Choose (1 or 2)"; if ($option -eq "2") { Write-Host "Go to: https://portal.azure.com/#create/Microsoft.Subscription" -ForegroundColor Yellow; exit 0 } else { $choice = Read-Host "Enter subscription number"; $targetSub = $subs[[int]$choice - 1] } }
 az account set --subscription $targetSub.id
 Write-Host "Using: $($targetSub.name)" -ForegroundColor Green
 @"
