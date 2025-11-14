@@ -1,0 +1,66 @@
+### Option 1: Recommended - Use MOVEit Gateway for Secure Public Access (Preferred for Production)
+MOVEit Gateway acts as a proxy in the DMZ, handling public traffic and tunneling it securely to an internal MOVEit Transfer server via an encrypted SSTP (Secure Socket Tunneling Protocol) connection. This setup requires a separate Windows Server for Gateway and a Gateway-enabled license for MOVEit Transfer. Assume you have MOVEit Transfer already installed internally.
+
+#### Step 1: Prepare Prerequisites
+- **Hardware/Software**: Dedicate a Windows Server (e.g., 2019 or later) in your DMZ for Gateway. Ensure it meets system requirements (check Progress documentation for your version).
+- **Licensing**: Verify your MOVEit Transfer license supports Gateway (contact Progress support if needed).
+- **Certificates**: Prepare SSL certificates (e.g., .pfx format) for secure protocols. Self-signed can be used for testing but not production.
+- **Network**: Ensure the Gateway server has a public-facing IP or NAT setup. The Transfer server remains on a private IP.
+
+#### Step 2: Install MOVEit Gateway Server
+- Download the latest MOVEit Gateway installer from the Progress portal (e.g., for 2024+ versions).
+- Run the installer on the DMZ server.
+- Select "Install Gateway Server" option.
+- Configure:
+  - SSL certificate for the Gateway web interface (e.g., port 9443 for admin).
+  - SSTP tunnel credentials (username/password for the secure tunnel).
+  - Hostname for the Gateway.
+- Complete installation. This sets up the server-side SSTP tunnel and proxy services.
+
+#### Step 3: Install Client-Side SSTP Tunnel on MOVEit Transfer Server
+- Run the same Gateway installer on the internal MOVEit Transfer server.
+- Select "Install Client-Side SSTP Tunnel" option.
+- Enter:
+  - Gateway server address (DMZ IP or hostname).
+  - SSTP credentials (matching those set in Step 2).
+  - Import the SSTP certificate if prompted.
+- Manually configure the tunnel:
+  - Go to Network Connections > Add VPN connection (use EAP-MSCHAP v2 authentication).
+  - Set up a scheduled task to auto-start the tunnel (e.g., via Task Scheduler to run at startup).
+
+#### Step 4: Configure Gateway Interface
+- On the Gateway server, open the web configuration interface: `https://localhost:9443` (or your chosen port).
+- Add an Endpoint:
+  - Enter the internal IP of the MOVEit Transfer server (e.g., 192.168.1.2) and port (default 443).
+  - Optional: Hostname for verification.
+  - Verify the connection and trust the Transfer server's SSL certificate.
+  - Sign in as a sysadmin or orgadmin to validate the license.
+- Add Proxies for Protocols:
+  - For SFTP/SSH: Add proxy listening on port 22, forwarding to Transfer's SSH port.
+  - For HTTPS: Add proxy on port 443, forwarding to Transfer's web port.
+  - For FTPS: Add explicit (port 21) or implicit (port 990), plus data ports (e.g., 3000-3100).
+  - Upload required keys/certs to the keystore (e.g., SSH host keys, SSL certs).
+  - Start each proxy manually.
+
+#### Step 5: Configure Firewall and Network
+- **Gateway Server (DMZ)**:
+  - Inbound rules: Allow public traffic on ports 22 (SSH/SFTP), 443 (HTTPS), 21/990 (FTPS), 80 (HTTP if needed), 3000-3100 (FTPS data), and 10443 (SSTP tunnel, restricted to Transfer server's IP).
+  - Set network profile to "Public" and enable the predefined MOVEit public block rule to restrict unauthorized access.
+- **External Firewall**: Allow inbound to Gateway on the above ports. Block all direct inbound to the Transfer server.
+- **Transfer Server**: Set inbound rules to "Private" profile only for FTP/SSH/HTTP/HTTPS. Add a rule to block all public incoming connections.
+- Test: External connections to Gateway IP should succeed; direct to Transfer IP should fail.
+
+#### Step 6: Configure MOVEit Transfer for Gateway
+- On the Transfer server, open MOVEit Transfer Config Utility (DMZConfig.exe).
+- Go to the "Gateway" tab.
+- Enable the connection.
+- Select SSH tunnel if needed (for older setups; SSTP is default).
+- Save and restart services.
+
+#### Step 7: Test and Harden
+- Test external access via Gateway (e.g., SFTP client to Gateway's public IP on port 22).
+- Implement IP allowlisting, multi-factor authentication, and regular patching.
+- Monitor logs for issues.
+
+This setup ensures no direct public access to the Transfer server, reducing risk.
+
