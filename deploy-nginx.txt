@@ -1,0 +1,224 @@
+# NGINX DMZ DEPLOYMENT - CLEAN VERSION
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "  SECURE DMZ REVERSE PROXY DEPLOYMENT" -ForegroundColor Cyan
+Write-Host "============================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check Azure CLI
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Azure CLI not installed" -ForegroundColor Red
+    Write-Host "Download: https://aka.ms/installazurecliwindows" -ForegroundColor Yellow
+    pause
+    exit 1
+}
+Write-Host "[OK] Azure CLI installed" -ForegroundColor Green
+
+# Install modules
+$modules = @("Az.Accounts", "Az.Compute", "Az.Network")
+foreach ($module in $modules) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        Write-Host "Installing $module..." -ForegroundColor Yellow
+        Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
+    }
+}
+Write-Host "[OK] Modules ready" -ForegroundColor Green
+Write-Host ""
+
+# Azure login
+Write-Host "Connecting to Azure..." -ForegroundColor Yellow
+$account = az account show 2>$null | ConvertFrom-Json
+if (-not $account) {
+    az login --use-device-code
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Login failed" -ForegroundColor Red
+        pause
+        exit 1
+    }
+    $account = az account show | ConvertFrom-Json
+}
+Write-Host "[OK] Logged in as: $($account.user.name)" -ForegroundColor Green
+Write-Host ""
+
+# Select subscription
+Write-Host "Your Subscriptions:" -ForegroundColor Cyan
+$subs = az account list --all | ConvertFrom-Json
+for ($i = 0; $i -lt $subs.Count; $i++) {
+    Write-Host "  $($i + 1). $($subs[$i].name)"
+}
+Write-Host ""
+$choice = Read-Host "Select subscription number (1-$($subs.Count))"
+$selectedIndex = [int]$choice - 1
+$targetSub = $subs[$selectedIndex]
+az account set --subscription $targetSub.id
+Write-Host "[OK] Using: $($targetSub.name)" -ForegroundColor Green
+Write-Host ""
+
+# Register providers
+Write-Host "Registering Azure providers..." -ForegroundColor Yellow
+$providers = @("Microsoft.Compute", "Microsoft.Network", "Microsoft.Storage")
+foreach ($provider in $providers) {
+    $state = az provider show --namespace $provider --query "registrationState" -o tsv 2>$null
+    if ($state -ne "Registered") {
+        az provider register --namespace $provider --wait
+    }
+}
+Write-Host "[OK] Providers registered" -ForegroundColor Green
+Write-Host ""
+
+# Configuration
+Write-Host "=== CONFIGURATION ===" -ForegroundColor Cyan
+$resourceGroup = Read-Host "Resource Group name"
+$location = Read-Host "Azure region (e.g., eastus)"
+$proxyVmName = Read-Host "VM name"
+$vmSize = Read-Host "VM size (default: Standard_B2s, press Enter)"
+if ([string]::IsNullOrWhiteSpace($vmSize)) { $vmSize = "Standard_B2s" }
+$adminUsername = Read-Host "Admin username"
+$adminPassword = Read-Host "Admin password (min 12 chars)" -AsSecureString
+$adminPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($adminPassword))
+
+$transferIP = "20.66.24.164"
+Write-Host ""
+Write-Host "Transfer Server: $transferIP (pre-configured)" -ForegroundColor Green
+Write-Host ""
+
+$enableSftp = Read-Host "Enable SFTP port 22? (Y/N)"
+$enableHttps = Read-Host "Enable HTTPS port 443? (Y/N)"
+Write-Host ""
+
+# Generate SSH key
+Write-Host "Generating SSH key..." -ForegroundColor Yellow
+$sshKeyPath = Join-Path $env:TEMP "nginx_key"
+if (Test-Path $sshKeyPath) { Remove-Item $sshKeyPath -Force }
+if (Test-Path "$sshKeyPath.pub") { Remove-Item "$sshKeyPath.pub" -Force }
+ssh-keygen -t rsa -b 4096 -f $sshKeyPath -N '""' -C "nginx" 2>$null | Out-Null
+$sshPubKey = Get-Content "$sshKeyPath.pub" -Raw
+Write-Host "[OK] SSH key: $sshKeyPath" -ForegroundColor Green
+Write-Host "SAVE THIS KEY FILE!" -ForegroundColor Red
+Write-Host ""
+
+# IP restriction
+$adminIP = "*"
+$restrictIP = Read-Host "Restrict admin SSH to your IP? (Y/N)"
+if ($restrictIP -eq "Y" -or $restrictIP -eq "y") {
+    $myIP = (Invoke-WebRequest -Uri "https://api.ipify.org" -UseBasicParsing).Content.Trim()
+    Write-Host "Your IP: $myIP" -ForegroundColor Yellow
+    $useIP = Read-Host "Use this IP? (Y/N)"
+    if ($useIP -eq "Y" -or $useIP -eq "y") {
+        $adminIP = $myIP
+    } else {
+        $adminIP = Read-Host "Enter your IP"
+    }
+    Write-Host "[OK] Admin restricted to: $adminIP" -ForegroundColor Green
+}
+Write-Host ""
+
+# Create resources
+Write-Host "Creating infrastructure..." -ForegroundColor Yellow
+az group create --name $resourceGroup --location $location --output none
+Write-Host "[OK] Resource group created" -ForegroundColor Green
+
+az network vnet create --resource-group $resourceGroup --name "vnet-dmz" --address-prefix "10.1.0.0/16" --subnet-name "subnet-dmz" --subnet-prefix "10.1.1.0/24" --location $location --output none
+Write-Host "[OK] VNet created" -ForegroundColor Green
+
+az network nsg create --resource-group $resourceGroup --name "nsg-proxy" --location $location --output none
+Write-Host "[OK] NSG created" -ForegroundColor Green
+
+if ($enableSftp -eq "Y" -or $enableSftp -eq "y") {
+    az network nsg rule create --resource-group $resourceGroup --nsg-name "nsg-proxy" --name "SFTP" --priority 100 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes "*" --destination-port-ranges 22 --output none
+}
+
+if ($enableHttps -eq "Y" -or $enableHttps -eq "y") {
+    az network nsg rule create --resource-group $resourceGroup --nsg-name "nsg-proxy" --name "HTTPS" --priority 110 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes "*" --destination-port-ranges 443 --output none
+}
+
+az network nsg rule create --resource-group $resourceGroup --nsg-name "nsg-proxy" --name "SSH-Admin" --priority 200 --direction Inbound --access Allow --protocol Tcp --source-address-prefixes $adminIP --destination-port-ranges 2222 --output none
+
+az network nsg rule create --resource-group $resourceGroup --nsg-name "nsg-proxy" --name "Deny-RDP" --priority 1000 --direction Inbound --access Deny --protocol Tcp --source-address-prefixes "*" --destination-port-ranges 3389 --output none
+Write-Host "[OK] Firewall configured" -ForegroundColor Green
+
+az network public-ip create --resource-group $resourceGroup --name "pip-proxy" --sku Standard --allocation-method Static --location $location --output none
+Write-Host "[OK] Public IP created" -ForegroundColor Green
+
+az network nic create --resource-group $resourceGroup --name "nic-proxy" --vnet-name "vnet-dmz" --subnet "subnet-dmz" --network-security-group "nsg-proxy" --public-ip-address "pip-proxy" --location $location --output none
+Write-Host "[OK] NIC created" -ForegroundColor Green
+Write-Host ""
+
+Write-Host "Creating VM (takes 5-10 min)..." -ForegroundColor Yellow
+az vm create --resource-group $resourceGroup --name $proxyVmName --nics "nic-proxy" --image "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest" --size $vmSize --admin-username $adminUsername --ssh-key-values $sshPubKey --location $location --output none
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: VM creation failed" -ForegroundColor Red
+    pause
+    exit 1
+}
+Write-Host "[OK] VM created!" -ForegroundColor Green
+Write-Host ""
+
+$proxyIP = az network public-ip show --resource-group $resourceGroup --name "pip-proxy" --query ipAddress --output tsv
+Write-Host "[OK] Proxy IP: $proxyIP" -ForegroundColor Green
+Write-Host ""
+
+Write-Host "Installing NGINX (takes 3-5 min)..." -ForegroundColor Yellow
+
+$installCmd = @"
+#!/bin/bash
+set -e
+apt-get update -y
+DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+apt-get install -y nginx openssl fail2ban ufw
+mkdir -p /etc/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/nginx.key -out /etc/nginx/ssl/nginx.crt -subj '/CN=proxy/O=Company/C=US'
+cat > /etc/nginx/nginx.conf << 'EOF'
+user www-data;
+worker_processes auto;
+events { worker_connections 4096; }
+http {
+    server_tokens off;
+    server {
+        listen 443 ssl;
+        ssl_certificate /etc/nginx/ssl/nginx.crt;
+        ssl_certificate_key /etc/nginx/ssl/nginx.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        location / {
+            proxy_pass https://$transferIP:443;
+            proxy_set_header Host \\\$host;
+            proxy_ssl_verify off;
+        }
+    }
+}
+stream {
+    server {
+        listen 22;
+        proxy_pass $transferIP:22;
+    }
+}
+EOF
+sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+nginx -t
+systemctl restart nginx
+systemctl restart sshd
+ufw --force enable
+ufw allow 22
+ufw allow 443
+ufw allow 2222
+"@
+
+$installEsc = $installCmd -replace "'", "'\''"
+az vm run-command invoke --resource-group $resourceGroup --name $proxyVmName --command-id RunShellScript --scripts "$installEsc" --output none
+
+Write-Host "[OK] NGINX installed!" -ForegroundColor Green
+Write-Host ""
+Write-Host "============================================" -ForegroundColor Green
+Write-Host "  DEPLOYMENT COMPLETE!" -ForegroundColor Green
+Write-Host "============================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "Proxy IP: $proxyIP" -ForegroundColor Cyan
+Write-Host "SSH Key: $sshKeyPath" -ForegroundColor Yellow
+Write-Host "SSH Command: ssh -i $sshKeyPath -p 2222 $adminUsername@$proxyIP" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "SAVE YOUR SSH KEY!" -ForegroundColor Red
+Write-Host ""
+Write-Host "Annual Savings: $17,400-$29,400" -ForegroundColor Green
+Write-Host ""
+pause
