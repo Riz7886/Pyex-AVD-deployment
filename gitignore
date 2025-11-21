@@ -1,0 +1,46 @@
+# Terraform files
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraformrc
+terraform.rc
+*.backup
+backup_*/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# Logs
+*.log
+logs/
+*.tmp
+
+# Azure
+.azure/
+
+# PowerShell
+*.ps1.bak
+
+# Sensitive data
+secrets/
+*.key
+*.pem
+*.pfx
+
+# Backup files
+*~
+*.bak
+*.backup

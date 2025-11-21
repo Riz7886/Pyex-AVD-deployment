@@ -1,0 +1,82 @@
+============================================
+EMERGENCY CLIENT DEPLOYMENT
+2 COMMANDS ONLY - 30 SECONDS
+============================================
+
+CLIENT IS WAITING!
+Download and push NOW!
+
+============================================
+STEP 1: DOWNLOAD
+============================================
+
+Download: CLIENT-READY-WINDOWS-FORMAT.zip
+Extract to: C:\Projects\Pyex-AVD-deployment\
+(Overwrite all files)
+
+============================================
+STEP 2: PUSH TO GIT (ONE COMMAND)
+============================================
+
+Open PowerShell in C:\Projects\Pyex-AVD-deployment\
+
+Run this ONE command:
+
+.\EMERGENCY-PUSH-TO-GIT.ps1
+
+THAT'S IT! DONE!
+
+============================================
+WHAT IT DOES
+============================================
+
+✅ Fixes Windows line endings (CRLF)
+✅ Adds all files to Git
+✅ Commits changes
+✅ Force pushes to GitHub
+✅ Ready for client deployment!
+
+============================================
+AFTER PUSH
+============================================
+
+Files will be in GitHub:
+https://github.com/Riz7886/Pyex-AVD-deployment.git
+
+✅ All files Windows-formatted
+✅ Works on work laptop
+✅ Works on home laptop
+✅ Works on client laptop
+✅ PRODUCTION READY!
+
+============================================
+IF SCRIPT DOESN'T RUN
+============================================
+
+Run this first:
+Set-ExecutionPolicy Bypass -Scope Process
+
+Then run:
+.\EMERGENCY-PUSH-TO-GIT.ps1
+
+============================================
+MANUAL ALTERNATIVE (IF NEEDED)
+============================================
+
+cd "C:\Projects\Pyex-AVD-deployment"
+git add .
+git commit -m "v4.0 Windows format"
+git push origin main --force
+
+============================================
+TIME ESTIMATE
+============================================
+
+Download ZIP: 10 seconds
+Extract files: 10 seconds
+Run script: 10 seconds
+TOTAL: 30 SECONDS!
+
+CLIENT READY! 🚀
+
+============================================

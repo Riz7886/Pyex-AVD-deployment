@@ -1,0 +1,24 @@
+# Azure Front Door Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+# Project Configuration
+project_name = "DriversHealth"
+environment  = "prod"
+location     = "East US"
+
+# Backend Server Configuration
+# REQUIRED: Update with your backend server hostname
+backend_host_name = "drivershealth.azurewebsites.net"
+
+# Health Probe Configuration
+health_probe_path = "/"
+
+# Alert Configuration
+# Update with your email address for alerts
+alert_email_address = "devops@drivershealth.com"
+
+# Optional: Additional Tags
+tags = {
+  CostCenter = "IT"
+  Owner      = "DevOps Team"
+}

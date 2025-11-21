@@ -1,0 +1,19 @@
+================================================================
+DRIVERS HEALTH - AZURE FRONT DOOR DEPLOYMENT REPORT
+================================================================
+
+Deployment Date: 2025-11-13 10:26:10
+Deployed By: PC
+Terraform Version: Terraform v1.13.4
+
+DEPLOYMENT OUTPUTS:
+-------------------
+
+
+
+CONFIGURATION:
+--------------
+
+target_subscription_id = "f623a36c-87b5-48e4-a3d4-1c6dc182eb43" subscription_name      = "Pay-As-You-Go"  company_name  = "Pyx Health" service_name  = "DriversHealth" naming_prefix = "dh" environment   = "prod"  resource_group_name = "rg-drivershealth-prod" location            = "eastus"  frontdoor_name = "fdh-prod" frontdoor_sku  = "Premium_AzureFrontDoor"  endpoint_name      = "afd-drivershealth-prod" origin_group_name  = "dh-origin-group" route_name         = "route-drivershealth-prod"  waf_mode = "Prevention"  health_probe_path     = "/health" health_probe_interval = 30  session_affinity_enabled = true enable_https_redirect    = true enable_caching           = false enable_compression       = true enable_managed_identity  = true enable_diagnostics       = true  log_retention_days = 90  auto_detect_backends     = true manual_backend_hostname  = "appcsvc-drivershealth-prod.azurewebsites.net"  backend_search_patterns = [   "*drivershealth*",   "*drivers-health*",   "*dh-*" ]  tags = {   Company    = "Pyx Health"   Service    = "Drivers Health"   ManagedBy  = "Terraform"   CostCenter = "Drivers-Health"   Compliance = "HIPAA"   Purpose    = "Drivers Health Platform" }  create_new_frontdoor = true
+
+================================================================

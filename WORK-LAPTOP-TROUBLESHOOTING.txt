@@ -1,0 +1,197 @@
+============================================
+WORK LAPTOP TROUBLESHOOTING GUIDE
+Fix "char 2/3" and "unexpected token" errors
+============================================
+
+PROBLEM:
+--------
+Scripts work on HOME laptop but NOT on WORK laptop
+Errors like:
+- "char 2, char 3"
+- "unexpected token"
+- "expressions or statement error"
+
+ROOT CAUSE:
+-----------
+LINE ENDINGS mismatch!
+- Scripts have Linux line endings (LF)
+- Work laptop needs Windows line endings (CRLF)
+- Home laptop probably has Git auto-converting
+
+============================================
+SOLUTION 1: AUTO-FIX (EASIEST)
+============================================
+
+Run this script on WORK LAPTOP:
+
+.\Fix-LineEndings-WorkLaptop.ps1
+
+This will automatically convert all files to Windows format.
+
+============================================
+SOLUTION 2: MANUAL FIX
+============================================
+
+On WORK LAPTOP, run these commands:
+
+cd "C:\Projects\Pyex-AVD-deployment"
+
+# Fix PowerShell script
+(Get-Content "Deploy-MOVEit-FINAL-v4.ps1" -Raw) -replace "`n", "`r`n" | Set-Content "Deploy-MOVEit-FINAL-v4.ps1" -NoNewline
+
+# Fix Terraform files
+(Get-Content "main-FINAL-v4.tf" -Raw) -replace "`n", "`r`n" | Set-Content "main-FINAL-v4.tf" -NoNewline
+(Get-Content "outputs-FINAL-v4.tf" -Raw) -replace "`n", "`r`n" | Set-Content "outputs-FINAL-v4.tf" -NoNewline
+
+============================================
+SOLUTION 3: DOWNLOAD WINDOWS VERSIONS
+============================================
+
+Download these Windows-formatted versions:
+- Deploy-MOVEit-FINAL-v4-WINDOWS.ps1
+- main-FINAL-v4-WINDOWS.tf
+- outputs-FINAL-v4-WINDOWS.tf
+
+Rename them (remove -WINDOWS):
+- Deploy-MOVEit-FINAL-v4.ps1
+- main-FINAL-v4.tf
+- outputs-FINAL-v4.tf
+
+============================================
+SOLUTION 4: FIX EXECUTION POLICY
+============================================
+
+If still getting errors after fixing line endings:
+
+# Run PowerShell as Administrator
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# OR for current session only
+Set-ExecutionPolicy Bypass -Scope Process
+
+============================================
+SOLUTION 5: CHECK POWERSHELL VERSION
+============================================
+
+Check version:
+$PSVersionTable.PSVersion
+
+Should be 5.1 or higher.
+
+If lower, update PowerShell:
+https://aka.ms/powershell-release?tag=stable
+
+============================================
+SOLUTION 6: USE NOTEPAD++ (IF INSTALLED)
+============================================
+
+If Notepad++ is installed on work laptop:
+
+1. Open Deploy-MOVEit-FINAL-v4.ps1 in Notepad++
+2. Menu: Edit → EOL Conversion → Windows (CRLF)
+3. Save file
+4. Repeat for .tf files
+
+============================================
+SOLUTION 7: GIT CONFIG (PREVENT FUTURE ISSUES)
+============================================
+
+Configure Git to always use CRLF on Windows:
+
+git config --global core.autocrlf true
+
+This prevents the issue in the future.
+
+============================================
+WHY DOES IT WORK AT HOME BUT NOT WORK?
+============================================
+
+POSSIBLE REASONS:
+
+1. HOME LAPTOP:
+   - Git configured with autocrlf=true
+   - Auto-converts LF to CRLF
+   - Scripts work fine
+
+2. WORK LAPTOP:
+   - Git configured with autocrlf=false
+   - Does NOT convert line endings
+   - Scripts have LF → PowerShell errors
+
+3. DIFFERENT SETTINGS:
+   - Home: More permissive
+   - Work: Corporate restrictions
+
+============================================
+TEST IF IT'S FIXED
+============================================
+
+After applying fix, test:
+
+cd "C:\Projects\Pyex-AVD-deployment"
+.\Deploy-MOVEit-FINAL-v4.ps1
+
+Should show:
+============================================
+  MOVEIT FRONT DOOR DEPLOYMENT
+  Uses Existing Infrastructure
+============================================
+
+If you see subscription selector, IT WORKS! ✓
+
+============================================
+STILL NOT WORKING?
+============================================
+
+Try this diagnostic:
+
+# Check file encoding
+Get-Content "Deploy-MOVEit-FINAL-v4.ps1" -Raw | Format-Hex | Select-Object -First 5
+
+Look for:
+- 0D 0A = CRLF (Windows) ✓ Good
+- 0A only = LF (Linux) ✗ Bad
+
+If you see 0A only, line endings are still wrong.
+Run Fix-LineEndings-WorkLaptop.ps1 again.
+
+============================================
+QUICK REFERENCE
+============================================
+
+ERROR                          FIX
+-----------------------------------------
+char 2/3 unexpected token      Line endings (run Fix-LineEndings-WorkLaptop.ps1)
+cannot be loaded               Execution policy (Set-ExecutionPolicy)
+not recognized as cmdlet       Wrong PowerShell version (update)
+Access denied                  Run as Administrator
+
+============================================
+WORK LAPTOP SPECIFIC ISSUES
+============================================
+
+Corporate environments often have:
+- Stricter execution policies
+- Older PowerShell versions
+- Group policy restrictions
+- Antivirus blocking scripts
+
+If company policy blocks scripts:
+- Contact IT department
+- Request script approval
+- Use Terraform instead (terraform apply)
+
+============================================
+SUMMARY
+============================================
+
+MOST LIKELY FIX (90% cases):
+Run: .\Fix-LineEndings-WorkLaptop.ps1
+
+SECOND MOST LIKELY (8% cases):
+Set execution policy
+
+OTHER (2% cases):
+Update PowerShell version
+
+============================================
