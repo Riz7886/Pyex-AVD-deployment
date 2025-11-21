@@ -1,48 +1,50 @@
 # ================================================================
 # MOVEIT AZURE FRONT DOOR + LOAD BALANCER DEPLOYMENT
-# PRODUCTION VERSION - USES EXISTING OR NEW RESOURCES
-# Matches pyxiq Configuration As Close As Possible
-# Version: 5.0 FINAL (Interactive RG/VNet/Subnet selection)
+# PRODUCTION VERSION - USES/CREATES INFRASTRUCTURE AS NEEDED
+# Matches pyxiq-style Configuration
+# Version: 5.0 FINAL (Ensure RG/VNet/Subnet exist or create)
 # ================================================================
 
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  MOVEIT FRONT DOOR DEPLOYMENT" -ForegroundColor Cyan
-Write-Host "  Uses Existing / New Infrastructure" -ForegroundColor Cyan
-Write-Host "  Matches pyxiq Configuration" -ForegroundColor Cyan
+Write-Host "  Uses Existing / Creates Missing Resources" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
 
 # ----------------------------------------------------------------
-# BASIC CONFIG (CAN EDIT)
+# CONFIGURATION (EDIT THESE FOR OTHER ENVIRONMENTS)
 # ----------------------------------------------------------------
 $config = @{
-    # Where to deploy new resources
-    Location = "westus"
+    # Resource Group / Network
+    ResourceGroup      = "rg-networking"      # existing RG name (or will be created)
+    Location           = "westus"             # Azure region
+    VNetName           = "vnet-prod"          # existing VNet name (or will be created)
+    VNetAddressSpace   = "192.168.0.0/16"     # used only if VNet must be created
+    SubnetName         = "snet-moveit"        # existing subnet (or will be created)
+    SubnetPrefix       = "192.168.0.0/24"     # used only if subnet must be created
 
-    # MOVEit backend private IP (inside selected VNet/Subnet)
-    MOVEitPrivateIP = "192.168.0.5"
+    # MOVEit backend
+    MOVEitPrivateIP    = "192.168.0.5"
 
-    # Names for NEW resources (these will be created if missing)
+    # Front Door
     FrontDoorProfileName    = "moveit-frontdoor-profile"
     FrontDoorEndpointName   = "moveit-endpoint"
-    FrontDoorOriginGroupName = "moveit-origin-group"
+    FrontDoorOriginGroupName= "moveit-origin-group"
     FrontDoorOriginName     = "moveit-origin"
     FrontDoorRouteName      = "moveit-route"
     FrontDoorSKU            = "Standard_AzureFrontDoor"
 
-    WAFPolicyName           = "moveitWAFPolicy"
-    WAFMode                 = "Prevention"
-    WAFSKU                  = "Standard_AzureFrontDoor"
+    # WAF
+    WAFPolicyName      = "moveitWAFPolicy"
+    WAFMode            = "Prevention"
+    WAFSKU             = "Standard_AzureFrontDoor"
 
-    LoadBalancerName        = "lb-moveit-ftps"
+    # Load Balancer
+    LoadBalancerName       = "lb-moveit-ftps"
     LoadBalancerPublicIPName = "pip-moveit-ftps"
 
-    NSGName                 = "nsg-moveit"
-
-    # These will be filled in later by interactive selection
-    ResourceGroup           = $null
-    VNetName                = $null
-    SubnetName              = $null
+    # NSG
+    NSGName             = "nsg-moveit"
 }
 
 # ----------------------------------------------------------------
@@ -62,28 +64,34 @@ function Write-Log {
 # ----------------------------------------------------------------
 Write-Log "Checking Azure CLI..." "Yellow"
 try {
-    $azVersion = az version --output json 2>$null | ConvertFrom-Json
-    Write-Log ("Azure CLI version: {0}" -f $azVersion."azure-cli") "Green"
-} catch {
-    Write-Log "ERROR: Azure CLI not found!" "Red"
+    $azVersionJson = az version --output json 2>$null
+    if (-not $azVersionJson) {
+        throw "az version returned no data"
+    }
+    $azVersion = $azVersionJson | ConvertFrom-Json
+    Write-Log "Azure CLI version: $($azVersion.'azure-cli')" "Green"
+}
+catch {
+    Write-Log "ERROR: Azure CLI not found or not working." "Red"
     Write-Log "Install from: https://aka.ms/installazurecliwindows" "Yellow"
     exit 1
 }
 
 # ----------------------------------------------------------------
-# STEP 2: LOGIN TO AZURE
+# STEP 2: LOGIN TO AZURE (DEVICE CODE IF NEEDED)
 # ----------------------------------------------------------------
 Write-Log "Checking Azure login status..." "Yellow"
 $loginCheck = az account show 2>$null
 if (-not $loginCheck) {
-    Write-Log "Not logged in - starting authentication (device code)..." "Yellow"
+    Write-Log "Not logged in - starting device code login..." "Yellow"
     az login --use-device-code | Out-Null
-} else {
-    Write-Log "Already logged in" "Green"
+}
+else {
+    Write-Log "Already logged in." "Green"
 }
 
 # ----------------------------------------------------------------
-# STEP 3: SELECT SUBSCRIPTION
+# STEP 3: SELECT SUBSCRIPTION (SHOW ALL, LET USER CHOOSE)
 # ----------------------------------------------------------------
 Write-Host ""
 Write-Log "============================================" "Cyan"
@@ -92,8 +100,7 @@ Write-Log "============================================" "Cyan"
 
 $subscriptions = az account list --output json | ConvertFrom-Json
 if (-not $subscriptions -or $subscriptions.Count -eq 0) {
-    Write-Log "No subscriptions visible for this account." "Red"
-    Write-Log "If you need a NEW subscription, create it in the Azure Portal then re-run this script." "Yellow"
+    Write-Log "ERROR: No subscriptions visible for this account." "Red"
     exit 1
 }
 
@@ -106,224 +113,123 @@ for ($i = 0; $i -lt $subscriptions.Count; $i++) {
 }
 
 Write-Host ""
-$selection = Read-Host "Select subscription number"
+Write-Host -NoNewline (Get-Date -Format "yyyy-MM-dd HH:mm:ss")" Select subscription number: "
+$selection = Read-Host
+
 try {
     $selectedIndex = [int]$selection - 1
+    if ($selectedIndex -lt 0 -or $selectedIndex -ge $subscriptions.Count) {
+        throw "Index out of range"
+    }
     $selectedSubscription = $subscriptions[$selectedIndex]
-    Write-Log ("Setting subscription to: {0}" -f $selectedSubscription.name) "Cyan"
+    Write-Log "Setting subscription to: $($selectedSubscription.name)" "Cyan"
     az account set --subscription $selectedSubscription.id
     $currentSub = az account show --query name -o tsv
-    Write-Log ("Active subscription: {0}" -f $currentSub) "Green"
-} catch {
-    Write-Log "ERROR: Invalid selection." "Red"
+    Write-Log "Active subscription: $currentSub" "Green"
+}
+catch {
+    Write-Log "ERROR: Invalid subscription selection." "Red"
     exit 1
 }
 
 Write-Host ""
 
 # ----------------------------------------------------------------
-# STEP 3B: SELECT OR CREATE RESOURCE GROUP
+# STEP 4: ENSURE RESOURCE GROUP / VNET / SUBNET EXIST
 # ----------------------------------------------------------------
-Write-Log "Retrieving resource groups..." "Yellow"
-$resourceGroups = az group list --query "[].name" -o tsv
-$rgArray = @()
+Write-Log "============================================" "Cyan"
+Write-Log "CHECKING / CREATING NETWORK RESOURCES" "Cyan"
+Write-Log "============================================" "Cyan"
 
-if ($resourceGroups) {
-    for ($i = 0; $i -lt $resourceGroups.Count; $i++) {
-        $rgArray += $resourceGroups[$i]
-        Write-Host ("[{0}] {1}" -f ($i + 1), $resourceGroups[$i]) -ForegroundColor White
-    }
-} else {
-    Write-Log "No resource groups found in this subscription." "Yellow"
+# 4a) Resource Group
+Write-Log "Checking Resource Group: $($config.ResourceGroup)..." "Yellow"
+$rgExists = az group show --name $config.ResourceGroup 2>$null
+if ($rgExists) {
+    Write-Log "Resource Group exists: $($config.ResourceGroup)" "Green"
 }
-
-$createRgIndex = $rgArray.Count + 1
-Write-Host ("[{0}] Create NEW resource group" -f $createRgIndex) -ForegroundColor Cyan
-$rgChoice = Read-Host "Select resource group number"
-
-if ([int]$rgChoice -eq $createRgIndex -or (-not $resourceGroups)) {
-    $newRgName = Read-Host "Enter NEW resource group name (e.g. rg-moveit-prod)"
-    $newRgLocation = Read-Host ("Enter location for new RG (default: {0})" -f $config.Location)
-    if ([string]::IsNullOrWhiteSpace($newRgLocation)) {
-        $newRgLocation = $config.Location
-    }
-    Write-Log ("Creating resource group {0} in {1}..." -f $newRgName, $newRgLocation) "Cyan"
-    az group create --name $newRgName --location $newRgLocation --output none
-    $config.ResourceGroup = $newRgName
-    $config.Location = $newRgLocation
-    Write-Log ("Resource group created: {0}" -f $config.ResourceGroup) "Green"
-} else {
-    $index = [int]$rgChoice - 1
-    $config.ResourceGroup = $rgArray[$index]
-    Write-Log ("Using existing resource group: {0}" -f $config.ResourceGroup) "Green"
-}
-
-Write-Host ""
-
-# ----------------------------------------------------------------
-# STEP 3C: SELECT OR CREATE VNET
-# ----------------------------------------------------------------
-Write-Log ("Listing VNets in RG {0}..." -f $config.ResourceGroup) "Yellow"
-$vnetList = az network vnet list -g $config.ResourceGroup --query "[].name" -o tsv
-$vnetArray = @()
-
-if ($vnetList) {
-    for ($i = 0; $i -lt $vnetList.Count; $i++) {
-        $vnetArray += $vnetList[$i]
-        Write-Host ("[{0}] {1}" -f ($i + 1), $vnetList[$i]) -ForegroundColor White
-    }
-} else {
-    Write-Log "No VNets found in this resource group." "Yellow"
-}
-
-$createVnetIndex = $vnetArray.Count + 1
-Write-Host ("[{0}] Create NEW VNet" -f $createVnetIndex) -ForegroundColor Cyan
-$vnetChoice = Read-Host "Select VNet number"
-
-if ([int]$vnetChoice -eq $createVnetIndex -or (-not $vnetList)) {
-    $newVnetName = Read-Host "Enter NEW VNet name (e.g. vnet-prod)"
-    $newVnetPrefix = Read-Host "Enter address space for VNet (e.g. 192.168.0.0/16)"
-    if ([string]::IsNullOrWhiteSpace($newVnetPrefix)) {
-        $newVnetPrefix = "192.168.0.0/16"
-    }
-    $newSubnetName = Read-Host "Enter FIRST subnet name (e.g. snet-moveit)"
-    $newSubnetPrefix = Read-Host "Enter subnet prefix (e.g. 192.168.0.0/24)"
-    if ([string]::IsNullOrWhiteSpace($newSubnetPrefix)) {
-        $newSubnetPrefix = "192.168.0.0/24"
-    }
-
-    Write-Log ("Creating VNet {0} with subnet {1}..." -f $newVnetName, $newSubnetName) "Cyan"
-    az network vnet create `
-        --resource-group $config.ResourceGroup `
-        --name $newVnetName `
-        --address-prefixes $newVnetPrefix `
-        --subnet-name $newSubnetName `
-        --subnet-prefix $newSubnetPrefix `
+else {
+    Write-Log "Resource Group not found. Creating: $($config.ResourceGroup)" "Yellow"
+    az group create `
+        --name $config.ResourceGroup `
         --location $config.Location `
         --output none
-
-    $config.VNetName = $newVnetName
-    $config.SubnetName = $newSubnetName
-    Write-Log ("VNet and subnet created: {0} / {1}" -f $config.VNetName, $config.SubnetName) "Green"
-} else {
-    $index = [int]$vnetChoice - 1
-    $config.VNetName = $vnetArray[$index]
-    Write-Log ("Using existing VNet: {0}" -f $config.VNetName) "Green"
-
-    # ----------------------------------------------------------------
-    # STEP 3D: SELECT OR CREATE SUBNET INSIDE EXISTING VNET
-    # ----------------------------------------------------------------
-    Write-Log ("Listing subnets in VNet {0}..." -f $config.VNetName) "Yellow"
-    $subnetList = az network vnet subnet list `
-        -g $config.ResourceGroup `
-        --vnet-name $config.VNetName `
-        --query "[].name" `
-        -o tsv
-
-    $subnetArray = @()
-    if ($subnetList) {
-        for ($i = 0; $i -lt $subnetList.Count; $i++) {
-            $subnetArray += $subnetList[$i]
-            Write-Host ("[{0}] {1}" -f ($i + 1), $subnetList[$i]) -ForegroundColor White
-        }
-    } else {
-        Write-Log "No subnets found in this VNet." "Yellow"
-    }
-
-    $createSubnetIndex = $subnetArray.Count + 1
-    Write-Host ("[{0}] Create NEW subnet" -f $createSubnetIndex) -ForegroundColor Cyan
-    $subChoice = Read-Host "Select subnet number"
-
-    if ([int]$subChoice -eq $createSubnetIndex -or (-not $subnetList)) {
-        $newSubnetName = Read-Host "Enter NEW subnet name (e.g. snet-moveit)"
-        $newSubnetPrefix = Read-Host "Enter subnet prefix (e.g. 192.168.0.0/24)"
-        if ([string]::IsNullOrWhiteSpace($newSubnetPrefix)) {
-            $newSubnetPrefix = "192.168.0.0/24"
-        }
-
-        Write-Log ("Creating subnet {0}..." -f $newSubnetName) "Cyan"
-        az network vnet subnet create `
-            --resource-group $config.ResourceGroup `
-            --vnet-name $config.VNetName `
-            --name $newSubnetName `
-            --address-prefixes $newSubnetPrefix `
-            --output none
-
-        $config.SubnetName = $newSubnetName
-        Write-Log ("Subnet created: {0}" -f $config.SubnetName) "Green"
-    } else {
-        $index = [int]$subChoice - 1
-        $config.SubnetName = $subnetArray[$index]
-        Write-Log ("Using existing subnet: {0}" -f $config.SubnetName) "Green"
-    }
+    Write-Log "Resource Group created." "Green"
 }
 
-Write-Host ""
+# 4b) Virtual Network
+Write-Log "Checking VNet: $($config.VNetName)..." "Yellow"
+$vnetExists = az network vnet show `
+    --resource-group $config.ResourceGroup `
+    --name $config.VNetName 2>$null
 
-# ----------------------------------------------------------------
-# STEP 4: VERIFY RESOURCES (SAFETY CHECK)
-# ----------------------------------------------------------------
-Write-Log "============================================" "Cyan"
-Write-Log "VERIFYING SELECTED RESOURCES" "Cyan"
-Write-Log "============================================" "Cyan"
-
-# Check Resource Group
-Write-Log ("Checking Resource Group: {0}..." -f $config.ResourceGroup) "Yellow"
-$rgExists = az group show --name $config.ResourceGroup 2>$null
-if (-not $rgExists) {
-    Write-Log ("ERROR: Resource Group not found: {0}" -f $config.ResourceGroup) "Red"
-    exit 1
+if ($vnetExists) {
+    Write-Log "VNet exists: $($config.VNetName)" "Green"
 }
-Write-Log "Resource Group verified." "Green"
-
-# Check VNet
-Write-Log ("Checking VNet: {0}..." -f $config.VNetName) "Yellow"
-$vnetExists = az network vnet show --resource-group $config.ResourceGroup --name $config.VNetName 2>$null
-if (-not $vnetExists) {
-    Write-Log ("ERROR: VNet not found: {0}" -f $config.VNetName) "Red"
-    exit 1
+else {
+    Write-Log "VNet not found. Creating VNet: $($config.VNetName)" "Yellow"
+    az network vnet create `
+        --resource-group $config.ResourceGroup `
+        --name $config.VNetName `
+        --address-prefixes $config.VNetAddressSpace `
+        --location $config.Location `
+        --subnet-name $config.SubnetName `
+        --subnet-prefixes $config.SubnetPrefix `
+        --output none
+    Write-Log "VNet and subnet created: $($config.VNetName) / $($config.SubnetName)" "Green"
 }
-Write-Log "VNet verified." "Green"
 
-# Check Subnet
-Write-Log ("Checking Subnet: {0}..." -f $config.SubnetName) "Yellow"
+# 4c) Subnet (if VNet existed but subnet might not)
+Write-Log "Checking Subnet: $($config.SubnetName)..." "Yellow"
 $subnetExists = az network vnet subnet show `
     --resource-group $config.ResourceGroup `
     --vnet-name $config.VNetName `
     --name $config.SubnetName 2>$null
 
-if (-not $subnetExists) {
-    Write-Log ("ERROR: Subnet not found: {0}" -f $config.SubnetName) "Red"
-    exit 1
+if ($subnetExists) {
+    Write-Log "Subnet exists: $($config.SubnetName)" "Green"
 }
-Write-Log "Subnet verified." "Green"
+else {
+    Write-Log "Subnet not found. Creating subnet: $($config.SubnetName)" "Yellow"
+    az network vnet subnet create `
+        --resource-group $config.ResourceGroup `
+        --vnet-name $config.VNetName `
+        --name $config.SubnetName `
+        --address-prefixes $config.SubnetPrefix `
+        --output none
+    Write-Log "Subnet created." "Green"
+}
+
 Write-Host ""
 
 # ----------------------------------------------------------------
-# STEP 5: CREATE NETWORK SECURITY GROUP (NEW)
+# STEP 5: CREATE NETWORK SECURITY GROUP
 # ----------------------------------------------------------------
-Write-Log "Creating / Updating Network Security Group..." "Cyan"
+Write-Log "Creating / Checking Network Security Group..." "Cyan"
 
-$nsgExists = az network nsg show --resource-group $config.ResourceGroup --name $config.NSGName 2>$null
+$nsgExists = az network nsg show `
+    --resource-group $config.ResourceGroup `
+    --name $config.NSGName 2>$null
+
 if (-not $nsgExists) {
     az network nsg create `
         --resource-group $config.ResourceGroup `
         --name $config.NSGName `
         --location $config.Location `
         --output none
-    Write-Log ("NSG created: {0}" -f $config.NSGName) "Green"
-} else {
-    Write-Log ("NSG already exists: {0}" -f $config.NSGName) "Yellow"
+    Write-Log "NSG created: $($config.NSGName)" "Green"
+}
+else {
+    Write-Log "NSG already exists: $($config.NSGName)" "Yellow"
 }
 
-# Add NSG rules (idempotent: ignore errors if they exist)
-function Add-NsgRule {
+# Add/update rules (idempotent: overwrite if exist)
+function Ensure-NsgRule {
     param(
         [string]$RuleName,
         [int]$Priority,
         [int]$Port
     )
-    Write-Log ("Ensuring NSG rule {0} for port {1}..." -f $RuleName, $Port) "Cyan"
+    Write-Log "Ensuring NSG rule $RuleName on port $Port..." "Cyan"
     az network nsg rule create `
         --resource-group $config.ResourceGroup `
         --nsg-name $config.NSGName `
@@ -339,10 +245,11 @@ function Add-NsgRule {
         --output none 2>$null
 }
 
-Add-NsgRule -RuleName "Allow-FTPS-990" -Priority 100 -Port 990
-Add-NsgRule -RuleName "Allow-FTPS-989" -Priority 110 -Port 989
-Add-NsgRule -RuleName "Allow-HTTPS-443" -Priority 120 -Port 443
+Ensure-NsgRule -RuleName "Allow-FTPS-990" -Priority 100 -Port 990
+Ensure-NsgRule -RuleName "Allow-FTPS-989" -Priority 110 -Port 989
+Ensure-NsgRule -RuleName "Allow-HTTPS-443" -Priority 120 -Port 443
 
+# Associate NSG with subnet
 Write-Log "Associating NSG with subnet..." "Cyan"
 az network vnet subnet update `
     --resource-group $config.ResourceGroup `
@@ -362,7 +269,7 @@ Write-Log "DEPLOYING LOAD BALANCER FOR FTPS" "Cyan"
 Write-Log "============================================" "Cyan"
 
 # Public IP
-Write-Log "Ensuring Public IP for Load Balancer..." "Cyan"
+Write-Log "Checking Public IP for Load Balancer..." "Cyan"
 $lbPublicIPExists = az network public-ip show `
     --resource-group $config.ResourceGroup `
     --name $config.LoadBalancerPublicIPName 2>$null
@@ -375,13 +282,14 @@ if (-not $lbPublicIPExists) {
         --allocation-method Static `
         --location $config.Location `
         --output none
-    Write-Log ("Public IP created: {0}" -f $config.LoadBalancerPublicIPName) "Green"
-} else {
+    Write-Log "Public IP created: $($config.LoadBalancerPublicIPName)" "Green"
+}
+else {
     Write-Log "Public IP already exists." "Yellow"
 }
 
 # Load Balancer
-Write-Log "Ensuring Load Balancer..." "Cyan"
+Write-Log "Checking Load Balancer..." "Cyan"
 $lbExists = az network lb show `
     --resource-group $config.ResourceGroup `
     --name $config.LoadBalancerName 2>$null
@@ -397,7 +305,7 @@ if (-not $lbExists) {
         --location $config.Location `
         --output none
 
-    # Backend address
+    # backend address
     az network lb address-pool address add `
         --resource-group $config.ResourceGroup `
         --lb-name $config.LoadBalancerName `
@@ -407,7 +315,7 @@ if (-not $lbExists) {
         --ip-address $config.MOVEitPrivateIP `
         --output none
 
-    # Health probe
+    # health probe
     az network lb probe create `
         --resource-group $config.ResourceGroup `
         --lb-name $config.LoadBalancerName `
@@ -418,7 +326,7 @@ if (-not $lbExists) {
         --threshold 2 `
         --output none
 
-    # LB rules 990 and 989
+    # LB rules
     az network lb rule create `
         --resource-group $config.ResourceGroup `
         --lb-name $config.LoadBalancerName `
@@ -447,18 +355,19 @@ if (-not $lbExists) {
         --enable-tcp-reset true `
         --output none
 
-    Write-Log ("Load Balancer created: {0}" -f $config.LoadBalancerName) "Green"
-} else {
+    Write-Log "Load Balancer created: $($config.LoadBalancerName)" "Green"
+}
+else {
     Write-Log "Load Balancer already exists." "Yellow"
 }
 
 Write-Host ""
 
 # ----------------------------------------------------------------
-# STEP 7: CREATE WAF POLICY
+# STEP 7: CREATE WAF POLICY (MATCHING PYXIQ-STYLE)
 # ----------------------------------------------------------------
 Write-Log "============================================" "Cyan"
-Write-Log "DEPLOYING WAF POLICY" "Cyan"
+Write-Log "DEPLOYING / CHECKING WAF POLICY" "Cyan"
 Write-Log "============================================" "Cyan"
 
 $wafExists = az network front-door waf-policy show `
@@ -486,7 +395,6 @@ if (-not $wafExists) {
         --file-upload-limit-in-mb 500 `
         --output none
 
-    Write-Log "Adding managed rule sets..." "Cyan"
     az network front-door waf-policy managed-rules add `
         --resource-group $config.ResourceGroup `
         --policy-name $config.WAFPolicyName `
@@ -501,30 +409,10 @@ if (-not $wafExists) {
         --version 1.0 `
         --output none
 
-    Write-Log "Adding custom rules..." "Cyan"
-    az network front-door waf-policy rule create `
-        --resource-group $config.ResourceGroup `
-        --policy-name $config.WAFPolicyName `
-        --name "AllowLargeUploads" `
-        --rule-type MatchRule `
-        --priority 100 `
-        --action Allow `
-        --match-condition "RequestMethod Equal POST PUT PATCH" `
-        --output none 2>$null
-
-    az network front-door waf-policy rule create `
-        --resource-group $config.ResourceGroup `
-        --policy-name $config.WAFPolicyName `
-        --name "AllowMOVEitMethods" `
-        --rule-type MatchRule `
-        --priority 110 `
-        --action Allow `
-        --match-condition "RequestMethod Equal GET POST HEAD OPTIONS PUT PATCH DELETE" `
-        --output none 2>$null
-
-    Write-Log ("WAF Policy created: {0}" -f $config.WAFPolicyName) "Green"
-} else {
-    Write-Log "WAF Policy already exists." "Yellow"
+    Write-Log "WAF Policy created: $($config.WAFPolicyName)" "Green"
+}
+else {
+    Write-Log "WAF Policy already exists: $($config.WAFPolicyName)" "Yellow"
 }
 
 Write-Host ""
@@ -536,7 +424,7 @@ Write-Log "============================================" "Cyan"
 Write-Log "DEPLOYING AZURE FRONT DOOR" "Cyan"
 Write-Log "============================================" "Cyan"
 
-# Front Door Profile
+# Profile
 $fdProfileExists = az afd profile show `
     --resource-group $config.ResourceGroup `
     --profile-name $config.FrontDoorProfileName 2>$null
@@ -548,7 +436,8 @@ if (-not $fdProfileExists) {
         --sku $config.FrontDoorSKU `
         --output none
     Write-Log "Front Door profile created." "Green"
-} else {
+}
+else {
     Write-Log "Front Door profile already exists." "Yellow"
 }
 
@@ -566,7 +455,8 @@ if (-not $fdEndpointExists) {
         --enabled-state Enabled `
         --output none
     Write-Log "Front Door endpoint created." "Green"
-} else {
+}
+else {
     Write-Log "Front Door endpoint already exists." "Yellow"
 }
 
@@ -590,7 +480,8 @@ if (-not $originGroupExists) {
         --additional-latency-in-milliseconds 0 `
         --output none
     Write-Log "Origin group created." "Green"
-} else {
+}
+else {
     Write-Log "Origin group already exists." "Yellow"
 }
 
@@ -615,8 +506,9 @@ if (-not $originExists) {
         --weight 1000 `
         --enabled-state Enabled `
         --output none
-    Write-Log "Origin created." "Green"
-} else {
+    Write-Log "Origin created for MOVEit backend." "Green"
+}
+else {
     Write-Log "Origin already exists." "Yellow"
 }
 
@@ -640,18 +532,18 @@ if (-not $routeExists) {
         --patterns-to-match "/*" `
         --enabled-state Enabled `
         --output none
-    Write-Log "Route created." "Green"
-} else {
-    Write-Log "Route already exists." "Yellow"
+    Write-Log "HTTPS routing rule created." "Green"
+}
+else {
+    Write-Log "Routing rule already exists." "Yellow"
 }
 
-# Associate WAF
+# Associate WAF with Front Door
 Write-Log "Associating WAF policy with Front Door..." "Cyan"
 $wafPolicyId = az network front-door waf-policy show `
     --resource-group $config.ResourceGroup `
     --name $config.WAFPolicyName `
-    --query id `
-    --output tsv
+    --query id --output tsv
 
 $subscriptionId = az account show --query id --output tsv
 
@@ -667,63 +559,53 @@ Write-Log "WAF policy associated with Front Door." "Green"
 Write-Host ""
 
 # ----------------------------------------------------------------
-# STEP 9: ENABLE MICROSOFT DEFENDER (OPTIONAL)
+# STEP 9: ENABLE DEFENDER FOR RELEVANT PLANS
 # ----------------------------------------------------------------
-Write-Log "Enabling Microsoft Defender for Cloud (VMs, AppServices, Storage)..." "Cyan"
-az security pricing create --name VirtualMachines  --tier Standard --output none 2>$null
-az security pricing create --name AppServices     --tier Standard --output none 2>$null
+Write-Log "Enabling Microsoft Defender plans (VMs, AppServices, Storage)..." "Cyan"
+az security pricing create --name VirtualMachines --tier Standard --output none 2>$null
+az security pricing create --name AppServices --tier Standard --output none 2>$null
 az security pricing create --name StorageAccounts --tier Standard --output none 2>$null
-Write-Log "Microsoft Defender configuration complete." "Green"
+Write-Log "Microsoft Defender plans ensured." "Green"
 Write-Host ""
 
 # ----------------------------------------------------------------
-# DEPLOYMENT COMPLETE - SUMMARY
+# DEPLOYMENT SUMMARY
 # ----------------------------------------------------------------
 Write-Log "============================================" "Green"
-Write-Log "  DEPLOYMENT COMPLETED SUCCESSFULLY!" "Green"
+Write-Log "  DEPLOYMENT COMPLETED (OR ALREADY PRESENT)" "Green"
 Write-Log "============================================" "Green"
 Write-Host ""
 
 $ftpsPublicIP = az network public-ip show `
     --resource-group $config.ResourceGroup `
     --name $config.LoadBalancerPublicIPName `
-    --query ipAddress `
-    --output tsv
+    --query ipAddress --output tsv
 
 $frontDoorEndpoint = az afd endpoint show `
     --resource-group $config.ResourceGroup `
     --profile-name $config.FrontDoorProfileName `
     --endpoint-name $config.FrontDoorEndpointName `
-    --query hostName `
-    --output tsv
+    --query hostName --output tsv
 
-Write-Log "DEPLOYMENT SUMMARY:" "Cyan"
-Write-Log "===================" "Cyan"
+Write-Log "EXISTING / USED RESOURCES:" "Yellow"
+Write-Log "  Resource Group: $($config.ResourceGroup)" "White"
+Write-Log "  VNet: $($config.VNetName)" "White"
+Write-Log "  Subnet: $($config.SubnetName)" "White"
+Write-Log "  MOVEit Server IP: $($config.MOVEitPrivateIP)" "White"
 Write-Host ""
-Write-Log "RESOURCE SCOPE:" "Yellow"
-Write-Log ("  Subscription: {0}" -f (az account show --query name -o tsv)) "White"
-Write-Log ("  Resource Group: {0}" -f $config.ResourceGroup) "White"
-Write-Log ("  VNet: {0}" -f $config.VNetName) "White"
-Write-Log ("  Subnet: {0}" -f $config.SubnetName) "White"
-Write-Log ("  MOVEit Server IP: {0}" -f $config.MOVEitPrivateIP) "White"
+Write-Log "NEW / ENSURED RESOURCES:" "Yellow"
+Write-Log "  Front Door Profile: $($config.FrontDoorProfileName)" "White"
+Write-Log "  Front Door Endpoint: $frontDoorEndpoint" "White"
+Write-Log "  Load Balancer: $($config.LoadBalancerName)" "White"
+Write-Log "  WAF Policy: $($config.WAFPolicyName)" "White"
+Write-Log "  NSG: $($config.NSGName)" "White"
 Write-Host ""
-Write-Log "NEW RESOURCES:" "Yellow"
-Write-Log ("  Front Door: {0}" -f $config.FrontDoorProfileName) "White"
-Write-Log ("  Endpoint: {0}" -f $frontDoorEndpoint) "White"
-Write-Log ("  Load Balancer: {0}" -f $config.LoadBalancerName) "White"
-Write-Log ("  Public IP: {0}" -f $ftpsPublicIP) "White"
-Write-Log ("  WAF Policy: {0}" -f $config.WAFPolicyName) "White"
-Write-Log ("  NSG: {0}" -f $config.NSGName) "White"
+Write-Log "PUBLIC ENDPOINTS:" "Cyan"
+Write-Log "  FTPS Public IP: $ftpsPublicIP (ports 989, 990)" "Green"
+Write-Log "  HTTPS Front Door: https://$frontDoorEndpoint" "Green"
 Write-Host ""
-Write-Log "PUBLIC ACCESS:" "Cyan"
-Write-Log ("  FTPS: {0}:990, {0}:989" -f $ftpsPublicIP) "Green"
-Write-Log ("  HTTPS: https://{0}" -f $frontDoorEndpoint) "Green"
-Write-Host ""
-Write-Log "============================================" "Green"
-Write-Log "  READY FOR PRODUCTION" "Green"
-Write-Log "============================================" "Green"
 
-# Save summary on Desktop
+# Save summary to Desktop
 $summaryFile = Join-Path $env:USERPROFILE "Desktop\MOVEit-Deployment-Summary.txt"
 @"
 ============================================
@@ -732,28 +614,32 @@ MOVEIT FRONT DOOR DEPLOYMENT SUMMARY
 Deployed: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Subscription: $(az account show --query name -o tsv)
 
-Resource Group: $($config.ResourceGroup)
-VNet: $($config.VNetName)
-Subnet: $($config.SubnetName)
-MOVEit Backend IP: $($config.MOVEitPrivateIP)
+RESOURCE GROUP / NETWORK
+- Resource Group: $($config.ResourceGroup)
+- Location: $($config.Location)
+- VNet: $($config.VNetName)  ($($config.VNetAddressSpace))
+- Subnet: $($config.SubnetName)  ($($config.SubnetPrefix))
+- MOVEit Server IP: $($config.MOVEitPrivateIP)
 
-Front Door Profile: $($config.FrontDoorProfileName)
-Front Door Endpoint: $frontDoorEndpoint
-Load Balancer: $($config.LoadBalancerName)
-Public IP: $ftpsPublicIP
-WAF Policy: $($config.WAFPolicyName)
-NSG: $($config.NSGName)
+NEW / ENSURED RESOURCES
+- Front Door Profile: $($config.FrontDoorProfileName)
+- Front Door Endpoint: $frontDoorEndpoint
+- Origin Group: $($config.FrontDoorOriginGroupName)
+- Origin: $($config.FrontDoorOriginName)
+- Load Balancer: $($config.LoadBalancerName)
+- WAF Policy: $($config.WAFPolicyName)
+- NSG: $($config.NSGName)
 
-FTPS Ports: 990, 989
-HTTPS Port: 443
+PUBLIC ENDPOINTS
+- FTPS: $ftpsPublicIP (ports 989, 990)
+- HTTPS: https://$frontDoorEndpoint
 
-Health Probe: 30 seconds
-Sample Size: 4
-Successful Samples: 2
-Session Affinity: Disabled
-WAF Rules: DefaultRuleSet 1.0 + BotManager
-
+DEFENDER PLANS
+- VirtualMachines: Standard
+- AppServices: Standard
+- StorageAccounts: Standard
 ============================================
 "@ | Out-File -FilePath $summaryFile -Encoding ASCII
 
-Write-Log ("Summary saved to: {0}" -f $summaryFile) "Cyan"
+Write-Log "Summary saved to: $summaryFile" "Cyan"
+Write-Log "DONE." "Green"
