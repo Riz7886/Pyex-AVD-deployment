@@ -1,0 +1,305 @@
+============================================
+GIT PUSH INSTRUCTIONS
+Push Clean v4.0 Files to Repository
+============================================
+
+WHAT WAS CLEANED:
+-----------------
+❌ DELETED 13 old/duplicate files:
+   - Deploy-MOVEit-AUTOMATED-FINAL.ps1 (v1)
+   - Deploy-MOVEit-FrontDoor-PRODUCTION.ps1 (v3)
+   - main.tf / outputs.tf (v1)
+   - main-frontdoor.tf / outputs-frontdoor.tf (v3)
+   - Old ZIP files (v2.0)
+   - Old documentation
+
+✅ KEPT 9 clean files (v4.0 FINAL):
+   - Deploy-MOVEit-FINAL-v4.ps1
+   - main-FINAL-v4.tf
+   - outputs-FINAL-v4.tf
+   - generate-cert.ps1
+   - EXECUTIVE-SUMMARY.txt
+   - MOVEIT-DEPLOYMENT-GUIDE-v4.txt
+   - VERSION-COMPARISON-v3-vs-v4.txt
+   - MOVEit-FINAL-v4.0-PRODUCTION.zip
+   - README.md (NEW)
+   - .gitignore (NEW)
+
+============================================
+GIT PUSH COMMANDS
+============================================
+
+OPTION 1: PUSH TO EXISTING REPOSITORY
+--------------------------------------
+
+Step 1: Open PowerShell/Terminal in project folder
+
+Step 2: Initialize Git (if not already done)
+```bash
+git init
+```
+
+Step 3: Add remote (replace with your repo URL)
+```bash
+git remote add origin https://github.com/YOUR-USERNAME/moveit-deployment.git
+```
+
+Step 4: Add all clean files
+```bash
+git add .
+```
+
+Step 5: Commit
+```bash
+git commit -m "v4.0 FINAL - Clean production-ready deployment"
+```
+
+Step 6: Push to main branch
+```bash
+git push -u origin main
+```
+
+If main doesn't exist, try:
+```bash
+git push -u origin master
+```
+
+---
+
+OPTION 2: CREATE NEW REPOSITORY
+--------------------------------
+
+Step 1: Go to GitHub/GitLab/Azure DevOps
+
+Step 2: Create new repository
+   Name: moveit-azure-deployment
+   Description: MOVEit Azure Front Door Deployment v4.0
+   Private: Yes
+
+Step 3: Copy repository URL
+
+Step 4: Open PowerShell/Terminal in project folder
+
+Step 5: Run these commands:
+```bash
+git init
+git add .
+git commit -m "Initial commit - v4.0 FINAL production-ready"
+git branch -M main
+git remote add origin [YOUR-REPO-URL]
+git push -u origin main
+```
+
+Example:
+```bash
+git init
+git add .
+git commit -m "Initial commit - v4.0 FINAL production-ready"
+git branch -M main
+git remote add origin https://github.com/yourname/moveit-deployment.git
+git push -u origin main
+```
+
+---
+
+OPTION 3: UPDATE EXISTING REPOSITORY
+-------------------------------------
+
+If you already have files in Git and want to update:
+
+Step 1: Open PowerShell/Terminal in project folder
+
+Step 2: Remove old files from Git (but keep them locally first)
+```bash
+git rm --cached Deploy-MOVEit-AUTOMATED-FINAL.ps1
+git rm --cached Deploy-MOVEit-FrontDoor-PRODUCTION.ps1
+git rm --cached main.tf
+git rm --cached outputs.tf
+git rm --cached main-frontdoor.tf
+git rm --cached outputs-frontdoor.tf
+git rm --cached MOVEIT-WAF-CONFIGURATION.txt
+git rm --cached MOVEIT-FRONTDOOR-CONFIG.txt
+git rm --cached UPDATE-SUMMARY.txt
+git rm --cached README-POWERSHELL.md
+git rm --cached README-TERRAFORM.md
+```
+
+Step 3: Add new clean files
+```bash
+git add .
+```
+
+Step 4: Commit
+```bash
+git commit -m "v4.0 FINAL - Removed duplicates, cleaned up to production-ready files only"
+```
+
+Step 5: Push
+```bash
+git push
+```
+
+============================================
+VERIFY AFTER PUSH
+============================================
+
+After pushing, verify these files are in Git:
+
+DEPLOYMENT:
+✅ Deploy-MOVEit-FINAL-v4.ps1
+✅ main-FINAL-v4.tf
+✅ outputs-FINAL-v4.tf
+✅ generate-cert.ps1
+
+DOCUMENTATION:
+✅ README.md
+✅ EXECUTIVE-SUMMARY.txt
+✅ MOVEIT-DEPLOYMENT-GUIDE-v4.txt
+✅ VERSION-COMPARISON-v3-vs-v4.txt
+
+PACKAGE:
+✅ MOVEit-FINAL-v4.0-PRODUCTION.zip
+
+CONFIG:
+✅ .gitignore
+
+TOTAL: 10 files
+
+============================================
+GIT REPOSITORY STRUCTURE
+============================================
+
+After push, your repo should look like:
+
+```
+moveit-azure-deployment/
+├── .gitignore
+├── README.md
+├── Deploy-MOVEit-FINAL-v4.ps1
+├── main-FINAL-v4.tf
+├── outputs-FINAL-v4.tf
+├── generate-cert.ps1
+├── EXECUTIVE-SUMMARY.txt
+├── MOVEIT-DEPLOYMENT-GUIDE-v4.txt
+├── VERSION-COMPARISON-v3-vs-v4.txt
+└── MOVEit-FINAL-v4.0-PRODUCTION.zip
+```
+
+Clean, organized, production-ready!
+
+============================================
+TROUBLESHOOTING
+============================================
+
+ISSUE: "fatal: not a git repository"
+SOLUTION: Run: git init
+
+ISSUE: "fatal: remote origin already exists"
+SOLUTION: Run: git remote remove origin
+         Then: git remote add origin [URL]
+
+ISSUE: "error: failed to push"
+SOLUTION: Run: git pull origin main --rebase
+         Then: git push origin main
+
+ISSUE: "Permission denied"
+SOLUTION: Check Git credentials
+         Or use: git push https://USERNAME:TOKEN@github.com/...
+
+============================================
+AZURE DEVOPS (if using)
+============================================
+
+Step 1: Go to Azure DevOps
+Step 2: Create new repo: moveit-deployment
+Step 3: Copy clone URL
+
+Step 4: Push:
+```bash
+git init
+git add .
+git commit -m "v4.0 FINAL - Production ready"
+git remote add origin https://dev.azure.com/YOUR-ORG/YOUR-PROJECT/_git/moveit-deployment
+git push -u origin main
+```
+
+============================================
+GITHUB (if using)
+============================================
+
+Step 1: Go to GitHub
+Step 2: Click "New Repository"
+Step 3: Name: moveit-azure-deployment
+Step 4: Private repository
+Step 5: Don't initialize with README (we have one)
+Step 6: Create repository
+
+Step 7: Push:
+```bash
+git init
+git add .
+git commit -m "v4.0 FINAL - Production ready"
+git branch -M main
+git remote add origin https://github.com/YOUR-USERNAME/moveit-azure-deployment.git
+git push -u origin main
+```
+
+============================================
+GITLAB (if using)
+============================================
+
+Step 1: Go to GitLab
+Step 2: New project → Create blank project
+Step 3: Name: moveit-azure-deployment
+Step 4: Visibility: Private
+Step 5: Create project
+
+Step 6: Push:
+```bash
+git init
+git add .
+git commit -m "v4.0 FINAL - Production ready"
+git branch -M main
+git remote add origin https://gitlab.com/YOUR-USERNAME/moveit-azure-deployment.git
+git push -u origin main
+```
+
+============================================
+AFTER PUSHING
+============================================
+
+1. Verify all files are visible in Git web interface
+2. Check README.md displays correctly
+3. Clone to another machine to test
+4. Share repository URL with team
+5. Set up branch protection rules (optional)
+
+============================================
+RECOMMENDED GIT WORKFLOW
+============================================
+
+For future changes:
+
+1. Create feature branch:
+```bash
+git checkout -b feature/new-change
+```
+
+2. Make changes
+
+3. Commit:
+```bash
+git add .
+git commit -m "Description of change"
+```
+
+4. Push:
+```bash
+git push origin feature/new-change
+```
+
+5. Create Pull Request
+
+6. Merge to main after review
+
+============================================

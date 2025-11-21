@@ -1,6 +1,32 @@
-Reports/
-Logs/
-*.csv
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+terraform.tfvars
+
+# PowerShell
 *.log
-*.html
-Scheduled-Tasks/
+
+# Azure
+*.publishsettings
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive
+*.key
+*.pem
+*.pfx
+secrets.txt
+
+# Build
+dist/
+build/
