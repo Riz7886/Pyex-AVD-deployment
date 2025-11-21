@@ -119,11 +119,11 @@ output "deployment_summary" {
   
   CONFIGURATION MATCHES PYXIQ:
   ----------------------------
-  - Health Probe: 30 seconds ✓
-  - Sample Size: 4 ✓
-  - Successful Samples: 2 ✓
-  - Session Affinity: Disabled ✓
-  - WAF Rules: DefaultRuleSet 1.0 ✓
+  - Health Probe: 30 seconds 
+  - Sample Size: 4 
+  - Successful Samples: 2 
+  - Session Affinity: Disabled 
+  - WAF Rules: DefaultRuleSet 1.0 
   
   COST: ~$83/month
   ============================================
