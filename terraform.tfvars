@@ -1,0 +1,23 @@
+network_resource_group     = "rg-networking"
+deployment_resource_group  = "rg-moveit"
+location                   = "westus"
+vnet_name                  = "vnet-prod"
+subnet_name                = "snet-moveit"
+moveit_private_ip          = "192.168.0.5"
+nsg_name                   = "nsg-moveit"
+lb_name                    = "lb-moveit-ftps"
+lb_public_ip_name          = "pip-moveit-ftps"
+frontdoor_profile_name     = "moveit-frontdoor-profile"
+frontdoor_endpoint_name    = "moveit-endpoint"
+frontdoor_origin_group_name = "moveit-origin-group"
+frontdoor_origin_name      = "moveit-origin"
+frontdoor_route_name       = "moveit-route"
+frontdoor_sku              = "Standard_AzureFrontDoor"
+waf_policy_name            = "moveitWAFPolicy"
+waf_mode                   = "Prevention"
+
+tags = {
+  Environment = "Production"
+  Project     = "MOVEit"
+  ManagedBy   = "Terraform"
+}
